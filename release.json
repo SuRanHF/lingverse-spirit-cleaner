@@ -1,10 +1,10 @@
 {
-  "version": "0.9.3",
-  "title": "神识清理 v0.9.3",
+  "version": "0.9.4",
+  "title": "神识清理 v0.9.4",
   "notes": [
-    "接入 GitHub 自动更新：脚本管理器会通过 updateURL/downloadURL 检测新版本。",
-    "更新公告默认读取 GitHub release.json，新版本首次检测到时弹出变更内容。",
-    "保留手动检查云端更新按钮，可主动查看当前公告和下载地址。"
+    "优化电脑端面板宽度，默认展示更宽，信息更容易扫读。",
+    "新增右下角拖拽调节大小，宽高会自动保存，下次打开沿用。",
+    "面板内容会根据当前宽度自动换列，变宽时多列排布，变窄时自动收回。"
   ],
   "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js"
 }

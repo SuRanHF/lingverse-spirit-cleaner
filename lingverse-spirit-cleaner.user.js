@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.3
+// @version      0.9.4
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,15 +30,15 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.3';
+    var SCRIPT_VERSION = '0.9.4';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '接入 GitHub 自动更新：脚本管理器会通过 updateURL/downloadURL 检测新版本。',
-            '更新公告默认读取 GitHub release.json，新版本首次检测到时弹出变更内容。',
-            '保留手动检查云端更新按钮，可主动查看当前公告和下载地址。'
+            '优化电脑端面板宽度，默认展示更宽，信息更容易扫读。',
+            '新增右下角拖拽调节大小，宽高会自动保存，下次打开沿用。',
+            '面板内容会根据当前宽度自动换列，变宽时多列排布，变窄时自动收回。'
         ]
     };
 
@@ -1520,9 +1520,11 @@
         if (header) header.style.cursor = 'move';
         if (compactBar) compactBar.style.cursor = 'move';
 
-        var savedLeft = Number(localStorage.getItem('lvSpiritCleaner.panelLeft'));
-        var savedTop = Number(localStorage.getItem('lvSpiritCleaner.panelTop'));
-        if (Number.isFinite(savedLeft) && Number.isFinite(savedTop)) {
+        var savedLeftRaw = localStorage.getItem('lvSpiritCleaner.panelLeft');
+        var savedTopRaw = localStorage.getItem('lvSpiritCleaner.panelTop');
+        var savedLeft = Number(savedLeftRaw);
+        var savedTop = Number(savedTopRaw);
+        if (savedLeftRaw !== null && savedTopRaw !== null && Number.isFinite(savedLeft) && Number.isFinite(savedTop)) {
             panel.style.left = savedLeft + 'px';
             panel.style.top = savedTop + 'px';
             panel.style.right = 'auto';
@@ -1592,6 +1594,115 @@
         document.addEventListener('mouseup', endDrag);
         document.addEventListener('touchend', endDrag);
         document.addEventListener('touchcancel', endDrag);
+    }
+
+    function clampPanelBounds(panel) {
+        if (!panel || panel.classList.contains('lvsc-collapsed')) return;
+        var rect = panel.getBoundingClientRect();
+        var maxWidth = Math.max(300, window.innerWidth - 16);
+        var maxHeight = Math.max(260, window.innerHeight - 16);
+        var width = Math.min(rect.width || panel.offsetWidth, maxWidth);
+        var height = Math.min(rect.height || panel.offsetHeight, maxHeight);
+        panel.style.width = Math.max(300, Math.round(width)) + 'px';
+        panel.style.height = Math.max(260, Math.round(height)) + 'px';
+
+        rect = panel.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            panel.style.left = Math.max(0, window.innerWidth - rect.width - 8) + 'px';
+            panel.style.right = 'auto';
+        }
+        if (rect.bottom > window.innerHeight) {
+            panel.style.top = Math.max(0, window.innerHeight - rect.height - 8) + 'px';
+            panel.style.bottom = 'auto';
+        }
+    }
+
+    function restorePanelSize(panel) {
+        var savedWidth = Number(localStorage.getItem('lvSpiritCleaner.panelWidth'));
+        var savedHeight = Number(localStorage.getItem('lvSpiritCleaner.panelHeight'));
+        if (Number.isFinite(savedWidth) && savedWidth > 0) panel.style.width = savedWidth + 'px';
+        if (Number.isFinite(savedHeight) && savedHeight > 0) panel.style.height = savedHeight + 'px';
+        setTimeout(function () { clampPanelBounds(panel); }, 0);
+    }
+
+    function makePanelResizable(panel) {
+        var handle = panel.querySelector('#lvscResizeHandle');
+        if (!handle) return;
+        var resizing = false;
+        var startX = 0;
+        var startY = 0;
+        var startWidth = 0;
+        var startHeight = 0;
+        var startLeft = 0;
+        var startTop = 0;
+        var startRight = 0;
+        var startBottom = 0;
+
+        function resizePoint(event) {
+            if (event.touches && event.touches.length) return event.touches[0];
+            if (event.changedTouches && event.changedTouches.length) return event.changedTouches[0];
+            return event;
+        }
+
+        function beginResize(event) {
+            if (panel.classList.contains('lvsc-collapsed')) return;
+            var point = resizePoint(event);
+            var rect = panel.getBoundingClientRect();
+            resizing = true;
+            startX = point.clientX;
+            startY = point.clientY;
+            startWidth = rect.width;
+            startHeight = rect.height;
+            startLeft = rect.left;
+            startTop = rect.top;
+            startRight = rect.right;
+            startBottom = rect.bottom;
+            panel.style.left = rect.left + 'px';
+            panel.style.top = rect.top + 'px';
+            panel.style.right = 'auto';
+            panel.style.bottom = 'auto';
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        function moveResize(event) {
+            if (!resizing) return;
+            var point = resizePoint(event);
+            var maxWidth = Math.max(300, window.innerWidth - 16);
+            var maxHeight = Math.max(260, window.innerHeight - 16);
+            var nextWidth = Math.max(300, Math.min(maxWidth, startWidth + point.clientX - startX));
+            var nextHeight = Math.max(260, Math.min(maxHeight, startHeight + point.clientY - startY));
+            var nextLeft = startLeft;
+            var nextTop = startTop;
+            if (startRight > window.innerWidth - 40) nextLeft = Math.max(8, startRight - nextWidth);
+            if (startBottom > window.innerHeight - 40) nextTop = Math.max(8, startBottom - nextHeight);
+            if (nextLeft + nextWidth > window.innerWidth - 8) nextLeft = Math.max(8, window.innerWidth - nextWidth - 8);
+            if (nextTop + nextHeight > window.innerHeight - 8) nextTop = Math.max(8, window.innerHeight - nextHeight - 8);
+            panel.style.left = Math.round(nextLeft) + 'px';
+            panel.style.top = Math.round(nextTop) + 'px';
+            panel.style.width = Math.round(nextWidth) + 'px';
+            panel.style.height = Math.round(nextHeight) + 'px';
+            event.preventDefault();
+        }
+
+        function endResize() {
+            if (!resizing) return;
+            resizing = false;
+            var rect = panel.getBoundingClientRect();
+            localStorage.setItem('lvSpiritCleaner.panelWidth', String(Math.round(rect.width)));
+            localStorage.setItem('lvSpiritCleaner.panelHeight', String(Math.round(rect.height)));
+            localStorage.setItem('lvSpiritCleaner.panelLeft', String(Math.round(rect.left)));
+            localStorage.setItem('lvSpiritCleaner.panelTop', String(Math.round(rect.top)));
+        }
+
+        handle.addEventListener('mousedown', beginResize);
+        handle.addEventListener('touchstart', beginResize, { passive: false });
+        document.addEventListener('mousemove', moveResize);
+        document.addEventListener('touchmove', moveResize, { passive: false });
+        document.addEventListener('mouseup', endResize);
+        document.addEventListener('touchend', endResize);
+        document.addEventListener('touchcancel', endResize);
+        window.addEventListener('resize', function () { clampPanelBounds(panel); });
     }
 
     function setPanelCollapsed(panel, collapsed) {
@@ -1763,8 +1874,8 @@
         var style = document.createElement('style');
         style.id = 'lvscStyle';
         style.textContent = [
-            '#lvscPanel{position:fixed;right:18px;bottom:18px;z-index:99999;width:328px;min-width:260px;min-height:238px;max-width:92vw;max-height:90vh;background:rgba(17,20,29,.94);color:#f5f1e8;border:1px solid rgba(219,185,112,.45);box-shadow:0 16px 48px rgba(0,0,0,.38);border-radius:10px;font:13px/1.45 "Microsoft YaHei",sans-serif;overflow:auto;resize:both;touch-action:none}',
-            '#lvscPanel header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:rgba(219,185,112,.12);font-weight:700}',
+            '#lvscPanel{position:fixed;right:18px;bottom:18px;z-index:99999;width:min(460px,calc(100vw - 36px));height:min(720px,calc(100vh - 36px));min-width:300px;min-height:260px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:rgba(17,20,29,.94);color:#f5f1e8;border:1px solid rgba(219,185,112,.45);box-shadow:0 16px 48px rgba(0,0,0,.38);border-radius:10px;font:13px/1.45 "Microsoft YaHei",sans-serif;overflow:hidden;resize:none;touch-action:none;container-type:inline-size}',
+            '#lvscPanel header{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;padding:10px 12px;background:rgba(219,185,112,.12);font-weight:700}',
             '#lvscTitle{display:flex;align-items:center;gap:8px;min-width:0}',
             '#lvscTitleText{white-space:nowrap}',
             '#lvscHeaderActions{display:flex;align-items:center;gap:6px}',
@@ -1772,26 +1883,28 @@
             '#lvscClose,#lvscCollapseBtn,#lvscExpandBtn{height:28px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.1)!important}',
             '#lvscClose{width:28px}',
             '#lvscCollapseBtn,#lvscExpandBtn{padding:0 8px}',
-            '#lvscBody{padding:12px;display:grid;gap:9px;max-height:calc(90vh - 42px);overflow:auto}',
-            '#lvscCompactBar{display:none;align-items:center;gap:8px;padding:8px 10px;min-width:0}',
+            '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));align-content:start;gap:10px;overflow:auto}',
+            '#lvscBody>div:first-child,#lvscStatus,#lvscActions,#lvscAuthor{grid-column:1 / -1}',
+            '#lvscCompactBar{display:none;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;min-width:0}',
             '#lvscCompactSpirit{color:#d8b4fe;white-space:nowrap;font-size:12px}',
             '#lvscCompactStatus{flex:1;min-width:76px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
             '#lvscCompactStatus[data-tone=run]{color:#9be7c3}',
             '#lvscCompactStatus[data-tone=warn]{color:#ffd166}',
             '#lvscCompactRunBtn,#lvscCompactMonitorBtn{height:30px;min-width:52px;background:#dbb970;color:#17141d}',
             '#lvscCompactMonitorBtn{background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
-            '#lvscPanel.lvsc-collapsed{width:auto;min-width:0;min-height:0;max-width:96vw;resize:none;overflow:hidden;border-radius:999px}',
+            '#lvscPanel.lvsc-collapsed{width:auto!important;height:auto!important;min-width:0;min-height:0;max-width:96vw;overflow:hidden;border-radius:999px}',
             '#lvscPanel.lvsc-collapsed header{display:none}',
             '#lvscPanel.lvsc-collapsed #lvscBody{display:none}',
             '#lvscPanel.lvsc-collapsed #lvscCompactBar{display:flex}',
-            '#lvscPanel label{display:grid;gap:4px;color:#cfc6b2;font-size:12px}',
+            '#lvscPanel.lvsc-collapsed #lvscResizeHandle{display:none}',
+            '#lvscPanel label{display:grid;gap:4px;min-width:0;color:#cfc6b2;font-size:12px}',
             '#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{width:100%;height:29px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;padding:0 8px;font-size:12px}',
             '#lvscPanel input[type=checkbox]{margin-right:6px}',
             '#lvscPanel select option{background:#17141d;color:#fff}',
-            '.lvsc-section{display:grid;gap:8px;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.035)}',
+            '.lvsc-section{display:grid;align-content:start;gap:8px;min-width:0;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.035)}',
             '.lvsc-section-title,.lvsc-section-title-row>span{font-weight:700;color:#dbb970}',
-            '.lvsc-section-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px}',
-            '.lvsc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
+            '.lvsc-section-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}',
+            '.lvsc-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px}',
             '.lvsc-span2{grid-column:1 / -1}',
             '.lvsc-help{font-size:11px;color:#cfc6b2;opacity:.82;line-height:1.45}',
             '.lvsc-check{display:flex!important;align-items:center;gap:0;line-height:1.35;font-size:12px}',
@@ -1819,7 +1932,9 @@
             '.lvsc-update-card li{margin:6px 0}',
             '.lvsc-update-link{display:inline-block;color:#d8b4fe;margin-bottom:12px;text-decoration:none}',
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',
-            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{max-height:calc(78vh - 42px);gap:8px;padding:10px}.lvsc-grid2{grid-template-columns:1fr}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px);border-radius:12px}#lvscCompactStatus{max-width:none}}'
+            '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
+            '@container (max-width: 380px){.lvsc-grid2{grid-template-columns:1fr}#lvscBody{grid-template-columns:1fr}}',
+            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
         ].join('');
         document.head.appendChild(style);
 
@@ -1893,9 +2008,12 @@
             '<div id="lvscStatus" data-tone="idle">待命</div>' +
             '<div id="lvscActions"><button id="lvscRunBtn">开始清理</button><button id="lvscMonitorBtn">监测神识</button><button id="lvscRefreshBtn">刷新</button></div>' +
             '<div id="lvscAuthor">作者：SuH2RanZ1</div>' +
-            '</div>';
+            '</div>' +
+            '<div id="lvscResizeHandle" title="拖拽调节面板大小"></div>';
         document.body.appendChild(panel);
+        restorePanelSize(panel);
         makePanelDraggable(panel);
+        makePanelResizable(panel);
 
         document.getElementById('lvscReserve').value = String(state.reserve);
         document.getElementById('lvscDelay').value = String(state.delayMs);
