@@ -36,7 +36,8 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
                 notes: [
-            '"修复一键发布后本地更新弹窗公告不变的问题","发布脚本现在会同步更新'
+            '修复一键发布后本地更新弹窗公告不变的问题',
+            '发布脚本现在会同步更新 release.json 和脚本内置公告'
         ]
     };
 

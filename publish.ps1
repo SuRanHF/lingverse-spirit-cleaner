@@ -45,7 +45,7 @@ function ConvertTo-JsSingleQuotedString($Text) {
 }
 
 function ConvertTo-JsNotesArray($Items) {
-    $lines = @("        notes: [")
+    $lines = @("notes: [")
     for ($i = 0; $i -lt $Items.Count; $i++) {
         $suffix = if ($i -lt $Items.Count - 1) { "," } else { "" }
         $lines += "            $(ConvertTo-JsSingleQuotedString $Items[$i])$suffix"
