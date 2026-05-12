@@ -40,6 +40,20 @@ function Read-ReleaseNotes() {
     return $items
 }
 
+function ConvertTo-JsSingleQuotedString($Text) {
+    return "'" + ([string]$Text).Replace("\", "\\").Replace("'", "\'") + "'"
+}
+
+function ConvertTo-JsNotesArray($Items) {
+    $lines = @("        notes: [")
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        $suffix = if ($i -lt $Items.Count - 1) { "," } else { "" }
+        $lines += "            $(ConvertTo-JsSingleQuotedString $Items[$i])$suffix"
+    }
+    $lines += "        ]"
+    return ($lines -join [Environment]::NewLine)
+}
+
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
@@ -97,6 +111,17 @@ if ($Version) {
 
     $scriptText = [regex]::Replace($scriptText, "(@version\s+)[^\s]+", ('${1}' + $Version), 1)
     $scriptText = [regex]::Replace($scriptText, "(SCRIPT_VERSION\s*=\s*')[^']+(')", ('${1}' + $Version + '${2}'), 1)
+    $notesArray = ConvertTo-JsNotesArray @($Notes)
+    $builtinPattern = "(?s)(var BUILTIN_RELEASE\s*=\s*\{.*?title:\s*'神识清理 v'\s*\+\s*SCRIPT_VERSION,\s*)notes:\s*\[.*?\](\s*\};)"
+    if (-not [regex]::IsMatch($scriptText, $builtinPattern)) {
+        Fail "Cannot find BUILTIN_RELEASE.notes in userscript body."
+    }
+    $scriptText = [regex]::Replace(
+        $scriptText,
+        $builtinPattern,
+        { param($m) $m.Groups[1].Value + $notesArray + $m.Groups[2].Value },
+        1
+    )
     Write-Utf8NoBom $scriptPath $scriptText
 
     $downloadUrl = [string]$release.downloadUrl

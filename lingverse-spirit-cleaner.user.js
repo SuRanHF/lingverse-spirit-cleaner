@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.6
+// @version      0.9.7
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,15 +30,13 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.6';
+    var SCRIPT_VERSION = '0.9.7';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
-        notes: [
-            '按功能重新分类：基础清理、护道与商人、妖兽与恢复、自动流程、更新公告。',
-            '调整为分类内自适应排版，拖动窗口大小时不会再把不同功能混排打散。',
-            '操作按钮固定在底部区域，状态和主要操作更容易找到。'
+                notes: [
+            '"修复一键发布后本地更新弹窗公告不变的问题","发布脚本现在会同步更新'
         ]
     };
 

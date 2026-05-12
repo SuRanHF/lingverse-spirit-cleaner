@@ -1,8 +1,8 @@
 {
-    "version":  "0.9.6",
-    "title":  "神识清理 v0.9.6",
+    "version":  "0.9.7",
+    "title":  "神识清理 v0.9.7",
     "notes":  [
-                  "测试脚本"
+                  "\"修复一键发布后本地更新弹窗公告不变的问题\",\"发布脚本现在会同步更新"
               ],
     "downloadUrl":  "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js"
 }
