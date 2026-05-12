@@ -1,10 +1,10 @@
 {
-  "version": "0.9.4",
-  "title": "神识清理 v0.9.4",
+  "version": "0.9.5",
+  "title": "神识清理 v0.9.5",
   "notes": [
-    "优化电脑端面板宽度，默认展示更宽，信息更容易扫读。",
-    "新增右下角拖拽调节大小，宽高会自动保存，下次打开沿用。",
-    "面板内容会根据当前宽度自动换列，变宽时多列排布，变窄时自动收回。"
+    "按功能重新分类：基础清理、护道与商人、妖兽与恢复、自动流程、更新公告。",
+    "调整为分类内自适应排版，拖动窗口大小时不会再把不同功能混排打散。",
+    "操作按钮固定在底部区域，状态和主要操作更容易找到。"
   ],
   "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js"
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.4
+// @version      0.9.5
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,15 +30,15 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.4';
+    var SCRIPT_VERSION = '0.9.5';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '优化电脑端面板宽度，默认展示更宽，信息更容易扫读。',
-            '新增右下角拖拽调节大小，宽高会自动保存，下次打开沿用。',
-            '面板内容会根据当前宽度自动换列，变宽时多列排布，变窄时自动收回。'
+            '按功能重新分类：基础清理、护道与商人、妖兽与恢复、自动流程、更新公告。',
+            '调整为分类内自适应排版，拖动窗口大小时不会再把不同功能混排打散。',
+            '操作按钮固定在底部区域，状态和主要操作更容易找到。'
         ]
     };
 
@@ -1883,8 +1883,7 @@
             '#lvscClose,#lvscCollapseBtn,#lvscExpandBtn{height:28px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.1)!important}',
             '#lvscClose{width:28px}',
             '#lvscCollapseBtn,#lvscExpandBtn{padding:0 8px}',
-            '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr));align-content:start;gap:10px;overflow:auto}',
-            '#lvscBody>div:first-child,#lvscStatus,#lvscActions,#lvscAuthor{grid-column:1 / -1}',
+            '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:grid;grid-template-columns:1fr;align-content:start;gap:10px;overflow:auto}',
             '#lvscCompactBar{display:none;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;min-width:0}',
             '#lvscCompactSpirit{color:#d8b4fe;white-space:nowrap;font-size:12px}',
             '#lvscCompactStatus{flex:1;min-width:76px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
@@ -1901,6 +1900,12 @@
             '#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{width:100%;height:29px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;padding:0 8px;font-size:12px}',
             '#lvscPanel input[type=checkbox]{margin-right:6px}',
             '#lvscPanel select option{background:#17141d;color:#fff}',
+            '.lvsc-meter{display:grid;gap:7px;padding:9px;border:1px solid rgba(216,180,254,.2);border-radius:8px;background:rgba(216,180,254,.05)}',
+            '.lvsc-category{display:grid;gap:9px;min-width:0;padding:10px;border:1px solid rgba(219,185,112,.16);border-radius:9px;background:rgba(255,255,255,.025)}',
+            '.lvsc-category-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;color:#dbb970;letter-spacing:0}',
+            '.lvsc-category-title small{font-size:11px;font-weight:600;color:#9be7c3}',
+            '.lvsc-field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(156px,100%),1fr));gap:8px;align-items:end}',
+            '.lvsc-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(238px,100%),1fr));gap:9px;align-items:start}',
             '.lvsc-section{display:grid;align-content:start;gap:8px;min-width:0;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.035)}',
             '.lvsc-section-title,.lvsc-section-title-row>span{font-weight:700;color:#dbb970}',
             '.lvsc-section-title-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}',
@@ -1915,7 +1920,7 @@
             '#lvscStatus[data-tone=run]{color:#9be7c3}',
             '#lvscStatus[data-tone=warn]{color:#ffd166}',
             '#lvscAuthor{font-size:11px;color:#8f846f;text-align:center;border-top:1px solid rgba(255,255,255,.08);padding-top:8px}',
-            '#lvscActions{display:flex;gap:8px}',
+            '#lvscActions{position:sticky;bottom:-12px;z-index:2;display:flex;gap:8px;margin:0 -12px -12px;padding:10px 12px 12px;background:linear-gradient(180deg,rgba(17,20,29,.72),rgba(17,20,29,.98) 35%)}',
             '#lvscRunBtn{flex:1;height:34px;background:#dbb970;color:#17141d}',
             '#lvscRefreshBtn{width:72px;height:34px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.12)!important}',
             '#lvscMonitorBtn{height:34px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
@@ -1932,8 +1937,8 @@
             '.lvsc-update-card li{margin:6px 0}',
             '.lvsc-update-link{display:inline-block;color:#d8b4fe;margin-bottom:12px;text-decoration:none}',
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',
-            '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
-            '@container (max-width: 380px){.lvsc-grid2{grid-template-columns:1fr}#lvscBody{grid-template-columns:1fr}}',
+            '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;z-index:5;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
+            '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}}',
             '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
         ].join('');
         document.head.appendChild(style);
@@ -1944,19 +1949,29 @@
             '<header><span id="lvscTitle"><span id="lvscTitleText">神识清理</span></span><span id="lvscHeaderActions"><button id="lvscCollapseBtn" title="收起成横栏">收起</button><button id="lvscClose" title="隐藏">×</button></span></header>' +
             '<div id="lvscCompactBar"><span id="lvscCompactSpirit">读取中</span><span id="lvscCompactStatus" data-tone="idle">待命</span><button id="lvscCompactRunBtn">开始</button><button id="lvscCompactMonitorBtn">监测</button><button id="lvscExpandBtn">展开</button></div>' +
             '<div id="lvscBody">' +
-            '<div><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
+            '<div class="lvsc-meter"><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
+            '<div class="lvsc-category">' +
+            '<div class="lvsc-category-title">基础清理</div>' +
+            '<div class="lvsc-field-grid">' +
             '<label>保留神识<input id="lvscReserve" type="number" min="0" step="1"></label>' +
             '<label>间隔毫秒<input id="lvscDelay" type="number" min="600" step="100"></label>' +
-            '<label>护道重试上限<input id="lvscHireRetryLimit" type="number" min="1" max="10" step="1"></label>' +
-            '<div class="lvsc-grid2">' +
+            '<label>监测到神识<input id="lvscMonitorStartSpirit" type="number" min="0" step="1" title="填 0 表示神识满了再开始清理"></label>' +
+            '<label class="lvsc-check"><input id="lvscKeepMultiplier" type="checkbox">使用当前探索倍率</label>' +
+            '</div>' +
+            '</div>' +
+            '<div class="lvsc-category">' +
+            '<div class="lvsc-category-title">护道与商人</div>' +
+            '<div class="lvsc-field-grid">' +
             '<label>护道方式<select id="lvscHireMode"><option value="cheapest">最低价</option><option value="together">合击</option><option value="alone">单独</option></select></label>' +
             '<label>灵石上限<input id="lvscHireMaxFee" type="number" min="0" step="1" title="填 0 表示不限制"></label>' +
-            '</div>' +
-            '<label class="lvsc-check"><input id="lvscKeepMultiplier" type="checkbox">使用当前探索倍率</label>' +
-            '<div class="lvsc-grid2">' +
+            '<label>护道重试上限<input id="lvscHireRetryLimit" type="number" min="1" max="10" step="1"></label>' +
             '<label>商人策略<select id="lvscMerchantMode"><option value="legend">传说才买</option><option value="leave">直接离去</option></select></label>' +
             '<label class="lvsc-check"><input id="lvscAutoMerchant" type="checkbox">自动处理商人</label>' +
             '</div>' +
+            '</div>' +
+            '<div class="lvsc-category">' +
+            '<div class="lvsc-category-title">妖兽与恢复</div>' +
+            '<div class="lvsc-card-grid">' +
             '<div class="lvsc-section">' +
             '<div class="lvsc-section-title-row"><span>妖兽遭遇</span><label class="lvsc-check"><input id="lvscAutoSelfFightWeak" type="checkbox">弱怪自战</label></div>' +
             '<div class="lvsc-grid2">' +
@@ -1977,18 +1992,25 @@
             '<label class="lvsc-span2">回灵顺序<select id="lvscAutoMpPriority"><option value="stone,pill,adpoint">灵石 → 丹药 → 仙缘</option><option value="pill,stone,adpoint">丹药 → 灵石 → 仙缘</option><option value="adpoint,stone,pill">仙缘 → 灵石 → 丹药</option></select></label>' +
             '</div>' +
             '</div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="lvsc-category">' +
+            '<div class="lvsc-category-title">自动流程</div>' +
+            '<div class="lvsc-card-grid">' +
+            '<div class="lvsc-section">' +
+            '<div class="lvsc-section-title">冥想探索</div>' +
             '<label class="lvsc-check"><input id="lvscAutoMeditate" type="checkbox">神识不足自动冥想回满</label>' +
             '<label>收功神识<input id="lvscMeditateStopSpirit" type="number" min="0" step="1" title="填 0 表示冥想到神识上限"></label>' +
-            '<label>监测到神识<input id="lvscMonitorStartSpirit" type="number" min="0" step="1" title="填 0 表示神识满了再开始清理"></label>' +
             '<label class="lvsc-check"><input id="lvscAutoExploreAfterMeditate" type="checkbox">收功后自动继续探索</label>' +
             '<label class="lvsc-check"><input id="lvscNightOnlyExplore" type="checkbox">只在游戏夜晚探索</label>' +
+            '</div>' +
             '<div class="lvsc-section">' +
             '<div class="lvsc-section-title">藏宝图</div>' +
             '<div class="lvsc-grid2">' +
             '<button id="lvscAutoTrialBtn">自动试炼</button>' +
             '<button id="lvscAutoTreasureBtn">自动刷藏宝图</button>' +
             '</div>' +
-            '<div style="font-size:11px;color:#cfc6b2;opacity:.82">试炼会消耗重置所需资源；刷图会使用背包藏宝图，遇守卫按护道配置处理。</div>' +
+            '<div class="lvsc-help">试炼会消耗重置所需资源；刷图会使用背包藏宝图，遇守卫按护道配置处理。</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
             '<div class="lvsc-section-title">虚空淬体</div>' +
@@ -1999,10 +2021,14 @@
             '</div>' +
             '<button id="lvscVoidBodyBtn">检查/补淬体</button>' +
             '</div>' +
-            '<div class="lvsc-section">' +
-            '<div class="lvsc-section-title-row"><span>更新公告</span><span style="font-size:11px;color:#9be7c3">v' + SCRIPT_VERSION + '</span></div>' +
+            '</div>' +
+            '</div>' +
+            '<div class="lvsc-category">' +
+            '<div class="lvsc-category-title">更新公告<small>v' + SCRIPT_VERSION + '</small></div>' +
+            '<div class="lvsc-field-grid">' +
             '<label>云端公告 JSON<input id="lvscUpdateManifestUrl" type="text" placeholder="' + DEFAULT_UPDATE_MANIFEST_URL + '"></label>' +
             '<button id="lvscCheckUpdateBtn">检查云端更新</button>' +
+            '</div>' +
             '<div class="lvsc-help">默认读取 GitHub 公告。脚本管理器会根据 updateURL/downloadURL 检测并提示下载安装。</div>' +
             '</div>' +
             '<div id="lvscStatus" data-tone="idle">待命</div>' +
