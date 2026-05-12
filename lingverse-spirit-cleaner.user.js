@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.7
+// @version      0.9.9
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,14 +30,15 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.7';
+    var SCRIPT_VERSION = '0.9.9';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
-                notes: [
-            '修复一键发布后本地更新弹窗公告不变的问题',
-            '发布脚本现在会同步更新 release.json 和脚本内置公告'
+        notes: [
+            '修复收起横栏宽度异常，收起后不会只剩一条细线。',
+            '一键发布脚本会先读取 GitHub 远端版本和本地版本，再提示默认新版本号。',
+            '顶部事件通知和收起横栏通知继续保留。'
         ]
     };
 
@@ -1704,13 +1705,38 @@
         window.addEventListener('resize', function () { clampPanelBounds(panel); });
     }
 
+    function clampCollapsedPanel(panel) {
+        if (!panel || !panel.classList.contains('lvsc-collapsed')) return;
+        var rect = panel.getBoundingClientRect();
+        var nextLeft = rect.left;
+        var nextTop = rect.top;
+        if (!Number.isFinite(nextLeft) || !Number.isFinite(nextTop)) {
+            nextLeft = window.innerWidth - Math.min(420, window.innerWidth - 16) - 8;
+            nextTop = window.innerHeight - 48;
+        }
+        if (rect.right > window.innerWidth - 8) nextLeft = window.innerWidth - rect.width - 8;
+        if (rect.bottom > window.innerHeight - 8) nextTop = window.innerHeight - rect.height - 8;
+        if (nextLeft < 8) nextLeft = 8;
+        if (nextTop < 8) nextTop = 8;
+        panel.style.left = Math.round(nextLeft) + 'px';
+        panel.style.top = Math.round(nextTop) + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+    }
+
     function setPanelCollapsed(panel, collapsed) {
+        if (collapsed && !panel.classList.contains('lvsc-collapsed')) {
+            var rect = panel.getBoundingClientRect();
+            localStorage.setItem('lvSpiritCleaner.panelLeft', String(Math.round(rect.left)));
+            localStorage.setItem('lvSpiritCleaner.panelTop', String(Math.round(rect.top)));
+        }
         panel.classList.toggle('lvsc-collapsed', collapsed);
         localStorage.setItem('lvSpiritCleaner.collapsed', collapsed ? '1' : '0');
         var btn = document.getElementById('lvscCollapseBtn');
         var expandBtn = document.getElementById('lvscExpandBtn');
         if (btn) btn.textContent = collapsed ? '展开' : '收起';
         if (expandBtn) expandBtn.textContent = collapsed ? '展开' : '收起';
+        if (collapsed) setTimeout(function () { clampCollapsedPanel(panel); }, 0);
     }
 
     function escapeLocalHtml(value) {
@@ -1882,16 +1908,20 @@
             '#lvscClose,#lvscCollapseBtn,#lvscExpandBtn{height:28px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.1)!important}',
             '#lvscClose{width:28px}',
             '#lvscCollapseBtn,#lvscExpandBtn{padding:0 8px}',
+            '#lvscStatus{flex:0 0 auto;margin:0;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);background:rgba(155,231,195,.08);font-size:12px;color:#cfc6b2;min-height:18px;white-space:normal;overflow-wrap:anywhere}',
+            '#lvscStatus[data-tone=run]{color:#9be7c3;background:rgba(155,231,195,.11)}',
+            '#lvscStatus[data-tone=warn]{color:#ffd166;background:rgba(255,209,102,.11)}',
             '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:grid;grid-template-columns:1fr;align-content:start;gap:10px;overflow:auto}',
             '#lvscCompactBar{display:none;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;min-width:0}',
             '#lvscCompactSpirit{color:#d8b4fe;white-space:nowrap;font-size:12px}',
-            '#lvscCompactStatus{flex:1;min-width:76px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
+            '#lvscCompactStatus{flex:1;min-width:76px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
             '#lvscCompactStatus[data-tone=run]{color:#9be7c3}',
             '#lvscCompactStatus[data-tone=warn]{color:#ffd166}',
             '#lvscCompactRunBtn,#lvscCompactMonitorBtn{height:30px;min-width:52px;background:#dbb970;color:#17141d}',
             '#lvscCompactMonitorBtn{background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
-            '#lvscPanel.lvsc-collapsed{width:auto!important;height:auto!important;min-width:0;min-height:0;max-width:96vw;overflow:hidden;border-radius:999px}',
+            '#lvscPanel.lvsc-collapsed{width:min(520px,calc(100vw - 16px))!important;height:auto!important;min-width:0;min-height:0;max-width:96vw;overflow:hidden;border-radius:999px}',
             '#lvscPanel.lvsc-collapsed header{display:none}',
+            '#lvscPanel.lvsc-collapsed #lvscStatus{display:none}',
             '#lvscPanel.lvsc-collapsed #lvscBody{display:none}',
             '#lvscPanel.lvsc-collapsed #lvscCompactBar{display:flex}',
             '#lvscPanel.lvsc-collapsed #lvscResizeHandle{display:none}',
@@ -1915,9 +1945,6 @@
             '#lvscSpiritTrack{height:8px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden}',
             '#lvscSpiritFill{height:100%;width:0;background:linear-gradient(90deg,#8667ff,#d8b4fe)}',
             '#lvscSpiritValue{font-size:12px;color:#d8b4fe}',
-            '#lvscStatus{font-size:12px;color:#cfc6b2;min-height:18px}',
-            '#lvscStatus[data-tone=run]{color:#9be7c3}',
-            '#lvscStatus[data-tone=warn]{color:#ffd166}',
             '#lvscAuthor{font-size:11px;color:#8f846f;text-align:center;border-top:1px solid rgba(255,255,255,.08);padding-top:8px}',
             '#lvscActions{position:sticky;bottom:-12px;z-index:2;display:flex;gap:8px;margin:0 -12px -12px;padding:10px 12px 12px;background:linear-gradient(180deg,rgba(17,20,29,.72),rgba(17,20,29,.98) 35%)}',
             '#lvscRunBtn{flex:1;height:34px;background:#dbb970;color:#17141d}',
@@ -1946,6 +1973,7 @@
         panel.id = 'lvscPanel';
         panel.innerHTML =
             '<header><span id="lvscTitle"><span id="lvscTitleText">神识清理</span></span><span id="lvscHeaderActions"><button id="lvscCollapseBtn" title="收起成横栏">收起</button><button id="lvscClose" title="隐藏">×</button></span></header>' +
+            '<div id="lvscStatus" data-tone="idle">待命</div>' +
             '<div id="lvscCompactBar"><span id="lvscCompactSpirit">读取中</span><span id="lvscCompactStatus" data-tone="idle">待命</span><button id="lvscCompactRunBtn">开始</button><button id="lvscCompactMonitorBtn">监测</button><button id="lvscExpandBtn">展开</button></div>' +
             '<div id="lvscBody">' +
             '<div class="lvsc-meter"><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
@@ -2030,7 +2058,6 @@
             '</div>' +
             '<div class="lvsc-help">默认读取 GitHub 公告。脚本管理器会根据 updateURL/downloadURL 检测并提示下载安装。</div>' +
             '</div>' +
-            '<div id="lvscStatus" data-tone="idle">待命</div>' +
             '<div id="lvscActions"><button id="lvscRunBtn">开始清理</button><button id="lvscMonitorBtn">监测神识</button><button id="lvscRefreshBtn">刷新</button></div>' +
             '<div id="lvscAuthor">作者：SuH2RanZ1</div>' +
             '</div>' +

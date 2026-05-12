@@ -29,6 +29,43 @@ function Get-NextPatchVersion($CurrentVersion) {
     return "$($match.Groups[1].Value).$($match.Groups[2].Value).$patch"
 }
 
+function Compare-Semver($A, $B) {
+    $pa = ([string]$A).TrimStart("v", "V").Split(".", "-")
+    $pb = ([string]$B).TrimStart("v", "V").Split(".", "-")
+    $len = [Math]::Max($pa.Count, $pb.Count)
+    for ($i = 0; $i -lt $len; $i++) {
+        $na = 0
+        $nb = 0
+        if ($i -lt $pa.Count) { [void][int]::TryParse($pa[$i], [ref]$na) }
+        if ($i -lt $pb.Count) { [void][int]::TryParse($pb[$i], [ref]$nb) }
+        if ($na -gt $nb) { return 1 }
+        if ($na -lt $nb) { return -1 }
+    }
+    return 0
+}
+
+function Get-HighestVersion($Versions) {
+    $highest = ""
+    foreach ($item in $Versions) {
+        if ([string]::IsNullOrWhiteSpace($item)) { continue }
+        if (-not $highest -or (Compare-Semver $item $highest) -gt 0) {
+            $highest = [string]$item
+        }
+    }
+    return $highest
+}
+
+function Get-RemoteScriptVersion() {
+    $rawScriptUrl = "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?cb=$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    try {
+        $remoteScript = (Invoke-WebRequest -UseBasicParsing $rawScriptUrl -Headers @{ "Cache-Control" = "no-cache" }).Content
+        return [regex]::Match($remoteScript, "@version\s+([^\s]+)").Groups[1].Value
+    } catch {
+        Write-Host "WARN: 读取 GitHub 远端版本失败：$($_.Exception.Message)" -ForegroundColor Yellow
+        return ""
+    }
+}
+
 function Read-ReleaseNotes() {
     Write-Host "输入更新内容，一行一条。直接回车结束：" -ForegroundColor Cyan
     $items = @()
@@ -80,8 +117,17 @@ if (-not $scriptVersion) { Fail "Cannot find SCRIPT_VERSION in userscript body."
 if (-not $releaseVersion) { Fail "Cannot find version in release.json." }
 
 if ($Interactive) {
-    Write-Host "当前版本：$metaVersion" -ForegroundColor Cyan
-    $defaultVersion = Get-NextPatchVersion $metaVersion
+    $remoteVersion = Get-RemoteScriptVersion
+    $baseVersion = Get-HighestVersion @($metaVersion, $scriptVersion, $releaseVersion, $remoteVersion)
+    if (-not $baseVersion) { $baseVersion = $metaVersion }
+    Write-Host "本地脚本版本：$metaVersion" -ForegroundColor Cyan
+    Write-Host "本地公告版本：$releaseVersion" -ForegroundColor Cyan
+    if ($remoteVersion) {
+        Write-Host "GitHub 远端版本：$remoteVersion" -ForegroundColor Cyan
+    } else {
+        Write-Host "GitHub 远端版本：读取失败，将按本地版本提示" -ForegroundColor Yellow
+    }
+    $defaultVersion = Get-NextPatchVersion $baseVersion
     $inputVersion = Read-Host "输入新版本号 [$defaultVersion]"
     if ([string]::IsNullOrWhiteSpace($inputVersion)) {
         $Version = $defaultVersion

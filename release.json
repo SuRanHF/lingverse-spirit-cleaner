@@ -1,9 +1,10 @@
 {
-    "version":  "0.9.7",
-    "title":  "神识清理 v0.9.7",
+    "version":  "0.9.9",
+    "title":  "神识清理 v0.9.9",
     "notes":  [
-                  "修复一键发布后本地更新弹窗公告不变的问题",
-                  "发布脚本现在会同步更新 release.json 和脚本内置公告"
+                  "修复收起横栏宽度异常，收起后不会只剩一条细线。",
+                  "一键发布脚本会先读取 GitHub 远端版本和本地版本，再提示默认新版本号。",
+                  "顶部事件通知和收起横栏通知继续保留。"
               ],
     "downloadUrl":  "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js"
 }
