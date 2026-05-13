@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.10
+// @version      0.9.11
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,15 +30,15 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.10';
+    var SCRIPT_VERSION = '0.9.11';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '弱怪自战新增战力判断，优先使用遭遇妖兽给出的“稍弱、接近”等评价。',
-            '新增“自战上限”选项，可选择自动打到“稍弱及以下”或“接近及以下”。',
-            '拿不到战力评价时仍回退到旧的生命、攻击、防御和境界判断。'
+            '按游戏真实战力标签调整弱怪自战：可稳战、势均力敌、略强、高层压制、强敌、越阶强敌。',
+            '自战上限改为“可稳战及以下 / 势均力敌及以下 / 略强及以下”。',
+            '默认只自动打“可稳战”，更激进的范围需要手动选择。'
         ]
     };
 
@@ -58,7 +58,7 @@
         meditateStopSpirit: readNumber('lvSpiritCleaner.meditateStopSpirit', 0),
         monitorStartSpirit: readNumber('lvSpiritCleaner.monitorStartSpirit', 0),
         autoSelfFightWeak: localStorage.getItem('lvSpiritCleaner.autoSelfFightWeak') !== '0',
-        selfFightPowerLimit: localStorage.getItem('lvSpiritCleaner.selfFightPowerLimit') || 'slightlyWeak',
+        selfFightPowerLimit: localStorage.getItem('lvSpiritCleaner.selfFightPowerLimit') || 'stable',
         selfFightMargin: readNumber('lvSpiritCleaner.selfFightMargin', 1.15),
         autoRecoveryMode: localStorage.getItem('lvSpiritCleaner.autoRecoveryMode') || 'both',
         autoRecoveryThreshold: readNumber('lvSpiritCleaner.autoRecoveryThreshold', 80),
@@ -241,8 +241,8 @@
         state.meditateStopSpirit = Math.max(0, Number(meditateStopInput && meditateStopInput.value || 0));
         state.monitorStartSpirit = Math.max(0, Number(monitorStartInput && monitorStartInput.value || 0));
         state.autoSelfFightWeak = !!(selfFightInput && selfFightInput.checked);
-        state.selfFightPowerLimit = (selfFightPowerLimitInput && selfFightPowerLimitInput.value) || 'slightlyWeak';
-        if (['veryWeak', 'weak', 'slightlyWeak', 'close', 'equal', 'slightlyStrong'].indexOf(state.selfFightPowerLimit) < 0) state.selfFightPowerLimit = 'slightlyWeak';
+        state.selfFightPowerLimit = (selfFightPowerLimitInput && selfFightPowerLimitInput.value) || 'stable';
+        if (['stable', 'balanced', 'slightlyStrong', 'weak', 'slightlyWeak', 'close'].indexOf(state.selfFightPowerLimit) < 0) state.selfFightPowerLimit = 'stable';
         state.selfFightMargin = Math.max(1, Math.min(3, Number(selfFightMarginInput && selfFightMarginInput.value || 1.15)));
         state.autoRecoveryMode = (recoveryModeInput && recoveryModeInput.value) || 'both';
         if (['none', 'hp', 'mp', 'both'].indexOf(state.autoRecoveryMode) < 0) state.autoRecoveryMode = 'both';
@@ -814,49 +814,47 @@
     function relationRank(value) {
         value = String(value || '').trim();
         if (!value) return null;
-        if (/碾压|极弱|很弱|明显弱|远弱|弱很多/.test(value)) return { key: 'weak', score: 1, label: '明显弱' };
-        if (/稍弱|略弱|偏弱|较弱|更弱|弱于|低于/.test(value)) return { key: 'slightlyWeak', score: 2, label: '稍弱' };
-        if (/接近|相近|差不多|相当|持平/.test(value)) return { key: 'close', score: 3, label: '接近' };
-        if (/同等|相等|相同/.test(value)) return { key: 'equal', score: 4, label: '同等' };
-        if (/稍强|略强|偏强|小强/.test(value)) return { key: 'slightlyStrong', score: 5, label: '稍强' };
-        if (/更强|较强|很强|明显强|远强|强于|高于/.test(value)) return { key: 'strong', score: 6, label: '更强' };
-        if (/弱/.test(value)) return { key: 'slightlyWeak', score: 2, label: '稍弱' };
-        if (/强/.test(value)) return { key: 'strong', score: 6, label: '更强' };
+        if (/可稳战|碾压|极弱|很弱|明显弱|远弱|弱很多/.test(value)) return { key: 'stable', score: 1, label: '可稳战' };
+        if (/势均力敌|接近|相近|差不多|相当|持平|同等|相等|相同/.test(value)) return { key: 'balanced', score: 2, label: '势均力敌' };
+        if (/略强|稍强|偏强|小强/.test(value)) return { key: 'slightlyStrong', score: 3, label: '略强' };
+        if (/高层压制/.test(value)) return { key: 'levelSuppress', score: 4, label: '高层压制' };
+        if (/越阶强敌/.test(value)) return { key: 'realmDanger', score: 6, label: '越阶强敌' };
+        if (/强敌|更强|较强|很强|明显强|远强|强于|高于/.test(value)) return { key: 'danger', score: 5, label: '强敌' };
+        if (/仅供参考/.test(value)) return { key: 'unknown', score: 99, label: '仅供参考' };
         return null;
     }
 
     function relationLimitScore() {
         var key = state.selfFightPowerLimit || 'slightlyWeak';
         var scores = {
-            veryWeak: 1,
             weak: 1,
-            slightlyWeak: 2,
-            close: 3,
-            equal: 4,
-            slightlyStrong: 5
+            slightlyWeak: 1,
+            stable: 1,
+            close: 2,
+            balanced: 2,
+            slightlyStrong: 3
         };
         return scores[key] || 2;
     }
 
     function relationLabelByScore(score) {
-        if (score <= 1) return '明显弱';
-        if (score === 2) return '稍弱';
-        if (score === 3) return '接近';
-        if (score === 4) return '同等';
-        if (score === 5) return '稍强';
-        return '更强';
+        if (score <= 1) return '可稳战';
+        if (score === 2) return '势均力敌';
+        if (score === 3) return '略强';
+        if (score === 4) return '高层压制';
+        if (score === 5) return '强敌';
+        return '越阶强敌';
     }
 
     function relationFromPower(playerPower, monsterPower) {
         if (!(playerPower > 0) || !(monsterPower > 0)) return null;
         var ratio = monsterPower / playerPower;
-        var score = 6;
-        if (ratio <= 0.7) score = 1;
-        else if (ratio <= 0.95) score = 2;
-        else if (ratio <= 1.1) score = 3;
-        else if (ratio <= 1.25) score = 5;
+        var score = 5;
+        if (ratio < 0.85) score = 1;
+        else if (ratio < 1.12) score = 2;
+        else if (ratio < 1.35) score = 3;
         return {
-            key: score <= 1 ? 'weak' : score === 2 ? 'slightlyWeak' : score === 3 ? 'close' : score === 5 ? 'slightlyStrong' : 'strong',
+            key: score <= 1 ? 'stable' : score === 2 ? 'balanced' : score === 3 ? 'slightlyStrong' : 'danger',
             score: score,
             label: relationLabelByScore(score),
             ratio: ratio
@@ -876,7 +874,7 @@
             textFromFirstElement(['encounterPowerRelation', 'encounterCombatPowerRelation', 'encounterPowerCompare', 'encounterPowerComparison'])
         ];
         var text = overlayText();
-        var overlayMatch = text.match(/(?:战力|实力|威胁|强度)[^，。；\n]*(碾压|明显弱|稍弱|略弱|接近|相近|相当|同等|稍强|略强|更强|明显强)/);
+        var overlayMatch = text.match(/(?:战力|实力|威胁|强度)[^，。；\n]*(可稳战|势均力敌|略强|高层压制|强敌|越阶强敌|仅供参考|碾压|明显弱|稍弱|略弱|接近|相近|相当|同等|稍强|更强|明显强)/);
         if (overlayMatch) candidates.push(overlayMatch[1]);
         for (var i = 0; i < candidates.length; i++) {
             var relation = relationRank(candidates[i]);
@@ -2128,7 +2126,7 @@
             '<div class="lvsc-section">' +
             '<div class="lvsc-section-title-row"><span>妖兽遭遇</span><label class="lvsc-check"><input id="lvscAutoSelfFightWeak" type="checkbox">弱怪自战</label></div>' +
             '<div class="lvsc-grid2">' +
-            '<label>自战上限<select id="lvscSelfFightPowerLimit"><option value="weak">明显弱及以下</option><option value="slightlyWeak">稍弱及以下</option><option value="close">接近及以下</option><option value="equal">同等及以下</option><option value="slightlyStrong">稍强及以下</option></select></label>' +
+            '<label>自战上限<select id="lvscSelfFightPowerLimit"><option value="stable">可稳战及以下</option><option value="balanced">势均力敌及以下</option><option value="slightlyStrong">略强及以下</option></select></label>' +
             '<label>接近倍率<input id="lvscSelfFightMargin" type="number" min="1" max="3" step="0.05" title="1.15 表示妖兽数值不超过自身 115% 时可自战"></label>' +
             '<button id="lvscSelfFightBtn">检查并自战</button>' +
             '</div>' +
