@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      0.9.11
+// @version      0.9.12
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -30,15 +30,15 @@
     var loopTimer = null;
     var busyEvent = false;
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
-    var SCRIPT_VERSION = '0.9.11';
+    var SCRIPT_VERSION = '0.9.12';
     var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json';
     var BUILTIN_RELEASE = {
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '按游戏真实战力标签调整弱怪自战：可稳战、势均力敌、略强、高层压制、强敌、越阶强敌。',
-            '自战上限改为“可稳战及以下 / 势均力敌及以下 / 略强及以下”。',
-            '默认只自动打“可稳战”，更激进的范围需要手动选择。'
+            '商人自动购买新增商品关键词、品质优先和高价阈值配置。',
+            '面板改成顶部菜单切换不同功能分类，窗口缩放时不再把大类混在一起。',
+            '商人购买会先按筛选规则挑商品，买不到符合条件的商品再自动离开。'
         ]
     };
 
@@ -50,6 +50,9 @@
         hireMaxFee: readNumber('lvSpiritCleaner.hireMaxFee', 0),
         keepCurrentMultiplier: localStorage.getItem('lvSpiritCleaner.keepMultiplier') === '1',
         merchantMode: localStorage.getItem('lvSpiritCleaner.merchantMode') || 'legend',
+        merchantKeyword: localStorage.getItem('lvSpiritCleaner.merchantKeyword') || '',
+        merchantQualityFirst: localStorage.getItem('lvSpiritCleaner.merchantQualityFirst') !== '0',
+        merchantMaxPrice: readNumber('lvSpiritCleaner.merchantMaxPrice', 0),
         autoMerchantLegend: localStorage.getItem('lvSpiritCleaner.autoMerchantLegend') !== '0',
         autoHireCheapest: localStorage.getItem('lvSpiritCleaner.autoHireCheapest') !== '0',
         autoMeditate: localStorage.getItem('lvSpiritCleaner.autoMeditate') !== '0',
@@ -205,6 +208,9 @@
         var multiplierInput = document.getElementById('lvscKeepMultiplier');
         var merchantInput = document.getElementById('lvscAutoMerchant');
         var merchantModeInput = document.getElementById('lvscMerchantMode');
+        var merchantKeywordInput = document.getElementById('lvscMerchantKeyword');
+        var merchantQualityInput = document.getElementById('lvscMerchantQualityFirst');
+        var merchantMaxPriceInput = document.getElementById('lvscMerchantMaxPrice');
         var hireInput = document.getElementById('lvscAutoHire');
         var meditateInput = document.getElementById('lvscAutoMeditate');
         var exploreAfterMeditateInput = document.getElementById('lvscAutoExploreAfterMeditate');
@@ -232,7 +238,10 @@
         state.hireMaxFee = Math.max(0, Number(hireMaxFeeInput && hireMaxFeeInput.value || 0));
         state.keepCurrentMultiplier = !!(multiplierInput && multiplierInput.checked);
         state.merchantMode = (merchantModeInput && merchantModeInput.value) || 'legend';
-        if (['legend', 'leave'].indexOf(state.merchantMode) < 0) state.merchantMode = 'legend';
+        if (['legend', 'custom', 'leave'].indexOf(state.merchantMode) < 0) state.merchantMode = 'legend';
+        state.merchantKeyword = String(merchantKeywordInput && merchantKeywordInput.value || '').trim();
+        state.merchantQualityFirst = !!(merchantQualityInput && merchantQualityInput.checked);
+        state.merchantMaxPrice = Math.max(0, Number(merchantMaxPriceInput && merchantMaxPriceInput.value || 0));
         state.autoMerchantLegend = !!(merchantInput && merchantInput.checked);
         state.autoHireCheapest = !!(hireInput && hireInput.checked);
         state.autoMeditate = !!(meditateInput && meditateInput.checked);
@@ -264,6 +273,9 @@
         localStorage.setItem('lvSpiritCleaner.hireMaxFee', String(state.hireMaxFee));
         localStorage.setItem('lvSpiritCleaner.keepMultiplier', state.keepCurrentMultiplier ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.merchantMode', state.merchantMode);
+        localStorage.setItem('lvSpiritCleaner.merchantKeyword', state.merchantKeyword);
+        localStorage.setItem('lvSpiritCleaner.merchantQualityFirst', state.merchantQualityFirst ? '1' : '0');
+        localStorage.setItem('lvSpiritCleaner.merchantMaxPrice', String(state.merchantMaxPrice));
         localStorage.setItem('lvSpiritCleaner.autoMerchantLegend', state.autoMerchantLegend ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.autoHireCheapest', state.autoHireCheapest ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.autoMeditate', state.autoMeditate ? '1' : '0');
@@ -642,18 +654,53 @@
         return ok;
     }
 
+    var MERCHANT_RARITY_TEXT = {
+        '普通': 1,
+        '优良': 2,
+        '稀有': 3,
+        '史诗': 4,
+        '传说': 5
+    };
+
+    function parseMerchantRarity(value, name) {
+        if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+        var text = String(value || '') + ' ' + String(name || '');
+        var best = 0;
+        Object.keys(MERCHANT_RARITY_TEXT).forEach(function (key) {
+            if (text.indexOf(key) >= 0) best = Math.max(best, MERCHANT_RARITY_TEXT[key]);
+        });
+        return best;
+    }
+
+    function normalizeMerchantItem(item, fallbackIndex) {
+        item = item || {};
+        var name = item.name || item.itemName || item.title || item.goodsName || item.displayName || '';
+        var price = Number(item.price || item.cost || item.fee || item.stone || item.spiritStone || 0);
+        if (!Number.isFinite(price)) price = Number(String(item.price || item.cost || '').replace(/[^\d]/g, '')) || 0;
+        var index = Number(item.index);
+        if (!Number.isFinite(index)) index = Number(item.idx);
+        if (!Number.isFinite(index)) index = Number(item.id);
+        if (!Number.isFinite(index)) index = fallbackIndex;
+        return {
+            index: index,
+            name: String(name || ''),
+            price: price,
+            rarity: parseMerchantRarity(item.rarity || item.quality || item.rank || item.level, name),
+            raw: item
+        };
+    }
+
     function getMerchantItemsFromDom() {
-        return Array.prototype.map.call(document.querySelectorAll('#merchantItemsList .merchant-item'), function (card) {
+        return Array.prototype.map.call(document.querySelectorAll('#merchantItemsList .merchant-item'), function (card, position) {
             var button = card.querySelector('.merchant-item__buy-btn');
             var indexMatch = button && String(button.getAttribute('onclick') || '').match(/buyMerchantItem\((\d+)\)/);
             var name = (card.querySelector('.merchant-item__name') || {}).textContent || '';
             var priceText = (button || {}).textContent || '';
-            return {
+            return normalizeMerchantItem({
                 index: indexMatch ? Number(indexMatch[1]) : NaN,
                 name: name,
-                price: Number(String(priceText).replace(/[^\d]/g, '')) || 0,
-                rarity: name.indexOf('传说') >= 0 ? 5 : 0
-            };
+                price: Number(String(priceText).replace(/[^\d]/g, '')) || 0
+            }, position);
         }).filter(function (item) {
             return Number.isFinite(item.index);
         });
@@ -661,6 +708,36 @@
 
     function isLegendary(item) {
         return Number(item.rarity || 0) >= 5 || String(item.name || '').indexOf('传说') >= 0;
+    }
+
+    function merchantKeywordList() {
+        return String(state.merchantKeyword || '').split(/[\s,，、;；|]+/).map(function (part) {
+            return part.trim();
+        }).filter(Boolean);
+    }
+
+    function chooseMerchantItem(items) {
+        var keywords = merchantKeywordList();
+        var candidates = items.map(normalizeMerchantItem).filter(function (item) {
+            if (!Number.isFinite(item.index)) return false;
+            if (state.merchantMode === 'legend' && !isLegendary(item)) return false;
+            if (state.merchantMaxPrice > 0 && Number(item.price || 0) > state.merchantMaxPrice) return false;
+            if (!keywords.length) return true;
+            return keywords.some(function (keyword) {
+                return String(item.name || '').indexOf(keyword) >= 0;
+            });
+        });
+        candidates.sort(function (a, b) {
+            if (state.merchantQualityFirst) {
+                return (Number(b.rarity || 0) - Number(a.rarity || 0)) ||
+                    (Number(a.price || 0) - Number(b.price || 0)) ||
+                    (Number(a.index || 0) - Number(b.index || 0));
+            }
+            return (Number(a.price || 0) - Number(b.price || 0)) ||
+                (Number(b.rarity || 0) - Number(a.rarity || 0)) ||
+                (Number(a.index || 0) - Number(b.index || 0));
+        });
+        return candidates[0] || null;
     }
 
     async function leaveMerchantSafely() {
@@ -731,12 +808,8 @@
                 items = getMerchantItemsFromDom();
             }
 
-            var legends = items.filter(isLegendary).sort(function (a, b) {
-                return (Number(a.price || 0) - Number(b.price || 0)) || (Number(a.index || 0) - Number(b.index || 0));
-            });
-
-            if (legends.length > 0) {
-                var target = legends[0];
+            var target = chooseMerchantItem(items);
+            if (target) {
                 var buyOk = false;
                 if (typeof window.buyMerchantItem === 'function') {
                     await window.buyMerchantItem(target.index);
@@ -744,16 +817,16 @@
                 } else {
                     var buyRes = await gameApi().post('/api/game/merchant/buy', { index: target.index });
                     buyOk = !!(buyRes && buyRes.code === 200);
-                    if (!buyOk) toast('传说商品购买失败，准备离开：' + ((buyRes && buyRes.message) || '未知错误'));
+                    if (!buyOk) toast('商人商品购买失败，准备离开：' + ((buyRes && buyRes.message) || '未知错误'));
                 }
                 if (buyOk) {
-                    toast('已购买传说商品：' + (target.name || ('index ' + target.index)));
+                    toast('已购买商人商品：' + (target.name || ('index ' + target.index)));
                 } else {
                     await leaveMerchantSafely();
                 }
             } else {
                 if (await leaveMerchantSafely()) {
-                    toast('商人无传说商品，已离开');
+                    toast('商人无符合配置的商品，已离开');
                 } else {
                     setStatus('商人离开失败，等待重试', 'warn');
                     return false;
@@ -2013,6 +2086,20 @@
         }
     }
 
+    function activatePanelTab(tabName) {
+        var allowed = ['basic', 'merchant', 'combat', 'flow', 'update'];
+        if (allowed.indexOf(tabName) < 0) tabName = 'basic';
+        Array.prototype.forEach.call(document.querySelectorAll('#lvscTabs .lvsc-tab'), function (button) {
+            var active = button.getAttribute('data-tab') === tabName;
+            button.classList.toggle('lvsc-active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('.lvsc-tab-panel'), function (panel) {
+            panel.classList.toggle('lvsc-active', panel.getAttribute('data-tab-panel') === tabName);
+        });
+        localStorage.setItem('lvSpiritCleaner.activeTab', tabName);
+    }
+
     function buildPanel() {
         var oldPanel = document.getElementById('lvscPanel');
         if (oldPanel) oldPanel.remove();
@@ -2035,7 +2122,7 @@
             '#lvscStatus{flex:0 0 auto;margin:0;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);background:rgba(155,231,195,.08);font-size:12px;color:#cfc6b2;min-height:18px;white-space:normal;overflow-wrap:anywhere}',
             '#lvscStatus[data-tone=run]{color:#9be7c3;background:rgba(155,231,195,.11)}',
             '#lvscStatus[data-tone=warn]{color:#ffd166;background:rgba(255,209,102,.11)}',
-            '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:grid;grid-template-columns:1fr;align-content:start;gap:10px;overflow:auto}',
+            '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}',
             '#lvscCompactBar{display:none;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;min-width:0}',
             '#lvscCompactSpirit{color:#d8b4fe;white-space:nowrap;font-size:12px}',
             '#lvscCompactStatus{flex:1;min-width:76px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
@@ -2054,7 +2141,12 @@
             '#lvscPanel input[type=checkbox]{margin-right:6px}',
             '#lvscPanel select option{background:#17141d;color:#fff}',
             '.lvsc-meter{display:grid;gap:7px;padding:9px;border:1px solid rgba(216,180,254,.2);border-radius:8px;background:rgba(216,180,254,.05)}',
+            '#lvscTabs{position:sticky;top:-12px;z-index:3;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:-2px -2px 0;padding:4px 2px 6px;background:rgba(17,20,29,.96);border-bottom:1px solid rgba(255,255,255,.08)}',
+            '.lvsc-tab{height:30px;padding:0 6px;background:rgba(255,255,255,.06);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+            '.lvsc-tab.lvsc-active{background:#dbb970;color:#17141d;border-color:#dbb970!important}',
             '.lvsc-category{display:grid;gap:9px;min-width:0;padding:10px;border:1px solid rgba(219,185,112,.16);border-radius:9px;background:rgba(255,255,255,.025)}',
+            '.lvsc-tab-panel{display:none}',
+            '.lvsc-tab-panel.lvsc-active{display:grid}',
             '.lvsc-category-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;color:#dbb970;letter-spacing:0}',
             '.lvsc-category-title small{font-size:11px;font-weight:600;color:#9be7c3}',
             '.lvsc-field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(156px,100%),1fr));gap:8px;align-items:end}',
@@ -2088,8 +2180,8 @@
             '.lvsc-update-link{display:inline-block;color:#d8b4fe;margin-bottom:12px;text-decoration:none}',
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',
             '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;z-index:5;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
-            '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}}',
-            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
+            '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}#lvscTabs{grid-template-columns:repeat(3,minmax(0,1fr))}.lvsc-tab{font-size:11px}}',
+            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscTabs{top:-10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
         ].join('');
         document.head.appendChild(style);
 
@@ -2101,7 +2193,14 @@
             '<div id="lvscCompactBar"><span id="lvscCompactSpirit">读取中</span><span id="lvscCompactStatus" data-tone="idle">待命</span><button id="lvscCompactRunBtn">开始</button><button id="lvscCompactMonitorBtn">监测</button><button id="lvscExpandBtn">展开</button></div>' +
             '<div id="lvscBody">' +
             '<div class="lvsc-meter"><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
-            '<div class="lvsc-category">' +
+            '<div id="lvscTabs">' +
+            '<button class="lvsc-tab" data-tab="basic">基础</button>' +
+            '<button class="lvsc-tab" data-tab="merchant">商人护道</button>' +
+            '<button class="lvsc-tab" data-tab="combat">妖兽恢复</button>' +
+            '<button class="lvsc-tab" data-tab="flow">自动流程</button>' +
+            '<button class="lvsc-tab" data-tab="update">更新</button>' +
+            '</div>' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="basic">' +
             '<div class="lvsc-category-title">基础清理</div>' +
             '<div class="lvsc-field-grid">' +
             '<label>保留神识<input id="lvscReserve" type="number" min="0" step="1"></label>' +
@@ -2110,17 +2209,21 @@
             '<label class="lvsc-check"><input id="lvscKeepMultiplier" type="checkbox">使用当前探索倍率</label>' +
             '</div>' +
             '</div>' +
-            '<div class="lvsc-category">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="merchant">' +
             '<div class="lvsc-category-title">护道与商人</div>' +
             '<div class="lvsc-field-grid">' +
             '<label>护道方式<select id="lvscHireMode"><option value="cheapest">最低价</option><option value="together">合击</option><option value="alone">单独</option></select></label>' +
             '<label>灵石上限<input id="lvscHireMaxFee" type="number" min="0" step="1" title="填 0 表示不限制"></label>' +
             '<label>护道重试上限<input id="lvscHireRetryLimit" type="number" min="1" max="10" step="1"></label>' +
-            '<label>商人策略<select id="lvscMerchantMode"><option value="legend">传说才买</option><option value="leave">直接离去</option></select></label>' +
+            '<label>商人策略<select id="lvscMerchantMode"><option value="legend">传说才买</option><option value="custom">按条件购买</option><option value="leave">直接离去</option></select></label>' +
+            '<label>商品关键词<input id="lvscMerchantKeyword" type="text" placeholder="多个用空格或逗号隔开"></label>' +
+            '<label>高价阈值(灵石)<input id="lvscMerchantMaxPrice" type="number" min="0" step="1" title="填 0 表示不限制"></label>' +
+            '<label class="lvsc-check"><input id="lvscMerchantQualityFirst" type="checkbox">品质优先</label>' +
             '<label class="lvsc-check"><input id="lvscAutoMerchant" type="checkbox">自动处理商人</label>' +
             '</div>' +
+            '<div class="lvsc-help">传说才买会固定要求传说品质；按条件购买会按关键词和价格筛选，品质优先开启后先买更高品质。</div>' +
             '</div>' +
-            '<div class="lvsc-category">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="combat">' +
             '<div class="lvsc-category-title">妖兽与恢复</div>' +
             '<div class="lvsc-card-grid">' +
             '<div class="lvsc-section">' +
@@ -2146,7 +2249,7 @@
             '</div>' +
             '</div>' +
             '</div>' +
-            '<div class="lvsc-category">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="flow">' +
             '<div class="lvsc-category-title">自动流程</div>' +
             '<div class="lvsc-card-grid">' +
             '<div class="lvsc-section">' +
@@ -2175,7 +2278,7 @@
             '</div>' +
             '</div>' +
             '</div>' +
-            '<div class="lvsc-category">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="update">' +
             '<div class="lvsc-category-title">更新公告<small>v' + SCRIPT_VERSION + '</small></div>' +
             '<div class="lvsc-field-grid">' +
             '<label>云端公告 JSON<input id="lvscUpdateManifestUrl" type="text" placeholder="' + DEFAULT_UPDATE_MANIFEST_URL + '"></label>' +
@@ -2199,6 +2302,9 @@
         document.getElementById('lvscHireMaxFee').value = String(state.hireMaxFee);
         document.getElementById('lvscKeepMultiplier').checked = state.keepCurrentMultiplier;
         document.getElementById('lvscMerchantMode').value = String(state.merchantMode);
+        document.getElementById('lvscMerchantKeyword').value = String(state.merchantKeyword);
+        document.getElementById('lvscMerchantQualityFirst').checked = state.merchantQualityFirst;
+        document.getElementById('lvscMerchantMaxPrice').value = String(state.merchantMaxPrice);
         document.getElementById('lvscAutoMerchant').checked = state.autoMerchantLegend;
         document.getElementById('lvscAutoSelfFightWeak').checked = state.autoSelfFightWeak;
         document.getElementById('lvscSelfFightPowerLimit').value = String(state.selfFightPowerLimit);
@@ -2252,6 +2358,11 @@
             stop('已隐藏');
             panel.style.display = 'none';
         };
+        Array.prototype.forEach.call(document.querySelectorAll('#lvscTabs .lvsc-tab'), function (button) {
+            button.onclick = function () {
+                activatePanelTab(button.getAttribute('data-tab'));
+            };
+        });
         document.getElementById('lvscReserve').onchange = syncSettingsFromUi;
         document.getElementById('lvscDelay').onchange = syncSettingsFromUi;
         document.getElementById('lvscHireRetryLimit').onchange = syncSettingsFromUi;
@@ -2259,6 +2370,9 @@
         document.getElementById('lvscHireMaxFee').onchange = syncSettingsFromUi;
         document.getElementById('lvscKeepMultiplier').onchange = syncSettingsFromUi;
         document.getElementById('lvscMerchantMode').onchange = syncSettingsFromUi;
+        document.getElementById('lvscMerchantKeyword').onchange = syncSettingsFromUi;
+        document.getElementById('lvscMerchantQualityFirst').onchange = syncSettingsFromUi;
+        document.getElementById('lvscMerchantMaxPrice').onchange = syncSettingsFromUi;
         document.getElementById('lvscAutoMerchant').onchange = syncSettingsFromUi;
         document.getElementById('lvscAutoSelfFightWeak').onchange = syncSettingsFromUi;
         document.getElementById('lvscSelfFightPowerLimit').onchange = syncSettingsFromUi;
@@ -2280,6 +2394,7 @@
         document.getElementById('lvscVoidBuyQty').onchange = syncSettingsFromUi;
 
         setPanelCollapsed(panel, localStorage.getItem('lvSpiritCleaner.collapsed') === '1');
+        activatePanelTab(localStorage.getItem('lvSpiritCleaner.activeTab') || 'basic');
         refreshPlayer();
         showBuiltinReleaseOnce();
         setTimeout(function () { checkCloudUpdate(false); }, 1500);
