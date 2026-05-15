@@ -95,6 +95,16 @@ function Get-RemoteText($Url) {
     }
 }
 
+function Get-GitAheadCount() {
+    $upstream = git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($upstream)) { return 0 }
+    $count = git rev-list --count "@{u}..HEAD" 2>$null
+    if ($LASTEXITCODE -ne 0) { return 0 }
+    $value = 0
+    [void][int]::TryParse(([string]$count).Trim(), [ref]$value)
+    return $value
+}
+
 function ConvertTo-JsSingleQuotedString($Text) {
     return "'" + ([string]$Text).Replace("\", "\\").Replace("'", "\'") + "'"
 }
@@ -136,6 +146,7 @@ if (-not $releaseVersion) { Fail "Cannot find version in release.json." }
 
 if ($Interactive) {
     $remoteVersion = Get-RemoteScriptVersion
+    $aheadCount = Get-GitAheadCount
     $baseVersion = Get-HighestVersion @($metaVersion, $scriptVersion, $releaseVersion, $remoteVersion)
     if (-not $baseVersion) { $baseVersion = $metaVersion }
     Write-Host "本地脚本版本：$metaVersion" -ForegroundColor Cyan
@@ -145,7 +156,10 @@ if ($Interactive) {
     } else {
         Write-Host "GitHub 远端版本：读取失败，将按本地版本提示" -ForegroundColor Yellow
     }
-    if ($remoteVersion -and (Compare-Semver $metaVersion $remoteVersion) -gt 0) {
+    if ($aheadCount -gt 0) {
+        Write-Host "本地还有 $aheadCount 个提交没有推送；直接回车会重试推送当前版本。" -ForegroundColor Yellow
+    }
+    if ($aheadCount -gt 0 -and $remoteVersion -and (Compare-Semver $metaVersion $remoteVersion) -gt 0) {
         $defaultVersion = $metaVersion
     } else {
         $defaultVersion = Get-NextPatchVersion $baseVersion
@@ -263,7 +277,21 @@ new Function(text.slice(bodyStart, bodyEnd));
 
 $status = git status --short
 if (-not $status) {
-    Write-Host "No local changes to publish." -ForegroundColor Yellow
+    $aheadCount = Get-GitAheadCount
+    if ($aheadCount -le 0) {
+        Write-Host "No local changes to publish." -ForegroundColor Yellow
+        exit 0
+    }
+
+    if ($NoPush) {
+        Write-Host "No local file changes, but $aheadCount commit(s) are not pushed. Push skipped because -NoPush was used." -ForegroundColor Yellow
+        exit 0
+    }
+
+    Write-Host "No local file changes. Retrying push for $aheadCount pending commit(s)..." -ForegroundColor Cyan
+    git push
+    if ($LASTEXITCODE -ne 0) { Fail "git push failed." }
+    Write-Host "Pushed pending commit(s)." -ForegroundColor Green
     exit 0
 }
 
