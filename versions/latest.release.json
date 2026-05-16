@@ -1,6 +1,6 @@
 {
-  "version": "1.0.1",
-  "title": "神识清理 v1.0.1",
+  "version": "1.0.3",
+  "title": "神识清理 v1.0.3",
   "notes": [
     "新增页面不刷新时的云端版本轮询：脚本运行期间每 60 秒检测一次 release.json。",
     "发现 GitHub 上有更高版本时，会自动弹出更新公告和更新地址。",
@@ -17,7 +17,12 @@
     "铭文洗练目标改为最低等级、属性、最小数值分开选择，不再需要手写关键词。",
     "藏宝图配置改成“最多用几张 / 一次用几张 / 每次间隔”，并补充说明示例。",
     "新增浏览器通知开关，新版本和铭文命中目标时可弹系统通知。",
-    "更新公告和 README 已整理为功能列表、安装、使用、配置、发布和回滚说明。"
+    "更新公告和 README 已整理为功能列表、安装、使用、配置、发布和回滚说明。",
+    "更新弹窗新增“打开安装页”和“复制更新地址”，安装页会自动携带版本参数，减少 GitHub raw 缓存影响。",
+    "云端发现新版本后，如果用户只是关闭提醒但没有更新，脚本会在运行期间定时再次提醒。",
+    "妖兽自战改为只按自身战力与妖兽战力数值比较，不再使用战力标签、境界或生命攻击防御兜底。",
+    "在线统计改为绑定域名的阿里云 ECS 服务，电脑关机后仍可由云服务器接收心跳。",
+    "在线心跳增加油猴跨域请求兜底，并提升版本号，确保同版本缓存不会导致旧脚本继续运行。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.0.1"
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.0.3"
 }

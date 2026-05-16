@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "title": "神识清理 v1.0.0",
+  "version": "1.0.1",
+  "title": "神识清理 v1.0.1",
   "notes": [
     "新增页面不刷新时的云端版本轮询：脚本运行期间每 60 秒检测一次 release.json。",
     "发现 GitHub 上有更高版本时，会自动弹出更新公告和更新地址。",
@@ -19,5 +19,5 @@
     "新增浏览器通知开关，新版本和铭文命中目标时可弹系统通知。",
     "更新公告和 README 已整理为功能列表、安装、使用、配置、发布和回滚说明。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.0.0"
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.0.1"
 }
