@@ -76,27 +76,13 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '新增页面不刷新时的云端版本轮询：脚本运行期间每 60 秒检测一次 release.json。',
-            '发现 GitHub 上有更高版本时，会自动弹出更新公告和更新地址。',
-            '铭文洗练遇到按钮缺失、结果为空、放弃失败、异常、命中目标或达到最大次数时保持运行，改为等待重试或保留结果。',
-            '铭文点击改为模拟人工点击，并把等级改为按页面显示文本/数字匹配，避免固定等级表不适配。',
-            '铭文新增“命中后自动装配”开关：优先空槽，其次非目标槽，最后替换目标槽最低值。',
-            '妖兽自战修复：战力标签已判断可打时直接自战，不再被境界或三围回退逻辑误拦。',
-            '脚本面板层级提升到接近浏览器上限，打开游戏铭文页面时不会被页面覆盖。',
-            '自动流程新增隐秘符：探索和刷藏宝图前可从背包使用，缺少时尝试按“隐秘符”从坊市购买。',
-            '藏宝图和主探索流程的明显暂停点改为等待处理后继续，除非手动点击停止。',
-            '自动流程新增“陨落后自动引渡归来”，死亡弹窗出现后可自动复活并继续流程。',
-            '自动流程新增“启动前检查道韵加成”，开始清理或刷藏宝图前会确认加成状态。',
-            '冥想流程新增“优先仙缘高级冥想”，失败后自动回退普通冥想。',
-            '铭文洗练目标改为最低等级、属性、最小数值分开选择，不再需要手写关键词。',
-            '藏宝图配置改成“最多用几张 / 一次用几张 / 每次间隔”，并补充说明示例。',
-            '新增浏览器通知开关，新版本和铭文命中目标时可弹系统通知。',
-            '更新公告和 README 已整理为功能列表、安装、使用、配置、发布和回滚说明。',
-            '更新弹窗新增“打开安装页”和“复制更新地址”，安装页会自动携带版本参数，减少 GitHub raw 缓存影响。',
-            '云端发现新版本后，如果用户只是关闭提醒但没有更新，脚本会在运行期间定时再次提醒。',
-            '妖兽自战改为只按自身战力与妖兽战力数值比较，不再使用战力标签、境界或生命攻击防御兜底。',
-            '在线统计改为绑定域名的阿里云 ECS 服务，电脑关机后仍可由云服务器接收心跳。',
-            '在线心跳增加油猴跨域请求兜底，并提升版本号，确保同版本缓存不会导致旧脚本继续运行。'
+            '新增传音筒 z-index 提升，聊天面板始终在游戏上层不被遮挡。',
+            '新增宗门快速回血：自动搜索并点击宗门回血/回灵按钮，支持配置触发百分比。',
+            '新增装备自动维修：通过 /api/game/equipment/repair-all API 一键修复，自动检测 wearRate。',
+            '新增自动收徒：监控世界聊天，自动筛选低于 2 大境界的玩家，通过 /api/master/invite 收徒。',
+            '云端更新检测增加 10 秒超时 + jsDelivr CDN 镜像回退，解决 GitHub raw DNS 不可达问题。',
+            '修复维修循环问题：改用 API 调用替代 DOM 按钮搜索，基于 wearRate 精确判断。',
+            '收徒规则改为游戏标准：境界高出他人 2 大境即可收徒，不再需要手动选择境界。'
         ]
     };
 
@@ -1657,13 +1643,10 @@
     async function hasLowDurabilityFromApi() {
         if (!gameApi()) return false;
         try {
-            var res = await gameApi().get('/api/equipment');
+            var res = await gameApi().get('/api/game/equipment/current');
             if (res && res.code === 200 && Array.isArray(res.data)) {
                 for (var i = 0; i < res.data.length; i++) {
-                    var eq = res.data[i];
-                    var dur = Number(eq.durability !== undefined ? eq.durability : eq.currentDurability || 0);
-                    var maxDur = Number(eq.maxDurability !== undefined ? eq.maxDurability : eq.durabilityMax || 100);
-                    if (maxDur > 0 && dur / maxDur * 100 <= state.repairThreshold) return true;
+                    if (Number(res.data[i].wearRate || 0) > 0) return true;
                 }
             }
         } catch (_) {}
@@ -1680,17 +1663,25 @@
             if (!low) return false;
         }
 
-        setStatus('调用装备维修 API', 'run');
+        setStatus('调用修复 API', 'run');
         try {
-            var res = await gameApi().post('/api/equipment/repair-all', {});
+            var preview = await gameApi().get('/api/game/equipment/repair-all/preview');
+            if (preview && preview.code === 200 && preview.data && preview.data.count > 0) {
+                var afford = (preview.data.currentStones || 0) >= (preview.data.totalCost || 0);
+                if (!afford && !manual) {
+                    setStatus('灵石不足，跳过修复（需 ' + preview.data.totalCost + '，有 ' + preview.data.currentStones + '）', 'warn');
+                    return false;
+                }
+            }
+            var res = await gameApi().post('/api/game/equipment/repair-all', {});
             if (res && res.code === 200) {
-                setStatus('装备维修完成', 'run');
+                setStatus('装备修复完成', 'run');
                 await sleep(500);
                 await refreshPlayer();
                 return true;
             }
             if (res && res.message) {
-                setStatus('维修失败：' + res.message, 'warn');
+                setStatus('修复失败：' + res.message, 'warn');
                 return false;
             }
         } catch (err) {
@@ -1747,7 +1738,7 @@
         setStatus('收徒 ' + info.name + ' [' + info.realm + '] (我' + myRealm + ')', 'run');
 
         try {
-            var apiRes = await gameApi().post('/api/master/recruit-disciple', { playerId: info.playerId });
+            var apiRes = await gameApi().post('/api/master/invite', { apprenticeId: info.playerId });
             if (apiRes && apiRes.code === 200) {
                 setStatus('已收徒：' + info.name, 'run');
                 toast('收徒成功：' + info.name);
