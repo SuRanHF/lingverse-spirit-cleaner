@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.1.3
+// @version      1.1.4
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -63,7 +63,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.1.3';
+    var SCRIPT_VERSION = '1.1.4';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -76,7 +76,7 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '修复云端公告缓存问题：GitHub raw 和 jsDelivr CDN 的 release.json URL 均加 v 参数，每次发布自动破缓存，不再显示旧公告。'
+            '新增历史公告：更新弹窗显示完整版本历史，从 v1.1.0 起记录每次变更。'
         ]
     };
 
@@ -3098,11 +3098,22 @@
         var data = null;
         try { data = JSON.parse(rawText); } catch (_) {}
         if (data) {
-            var notes = normalizeNotes(data.notes || data.changes || data.changelog || data.releaseNotes);
+            var notes = normalizeNotes(data.notes || data.changes || data.releaseNotes);
+            var changelog = null;
+            if (Array.isArray(data.changelog)) {
+                changelog = data.changelog.map(function (entry) {
+                    return {
+                        version: entry.version || '',
+                        title: entry.title || '',
+                        notes: normalizeNotes(entry.notes || [])
+                    };
+                });
+            }
             return {
                 version: String(data.version || data.latestVersion || data.tag || '').replace(/^v/i, ''),
                 title: data.title || data.name || '',
                 notes: notes,
+                changelog: changelog,
                 downloadUrl: data.downloadUrl || data.url || data.updateUrl || '',
                 sourceUrl: sourceUrl || ''
             };
@@ -3156,8 +3167,27 @@
         var old = document.getElementById('lvscUpdateModal');
         if (old) old.remove();
 
-        var notes = normalizeNotes(release.notes);
-        if (!notes.length) notes = ['云端版本已更新，暂无详细变更说明。'];
+        var rawNotes = normalizeNotes(release.notes);
+        if (!rawNotes.length) rawNotes = ['暂无详细变更说明。'];
+
+        var changelog = Array.isArray(release.changelog) ? release.changelog : (Array.isArray(release.history) ? release.history : []);
+        var changelogHtml = '';
+        if (changelog.length > 0) {
+            changelogHtml = '<div class="lvsc-changelog">';
+            changelogHtml += '<div class="lvsc-changelog-title">历史公告</div>';
+            for (var c = 0; c < changelog.length; c++) {
+                var entry = changelog[c];
+                var entryNotes = normalizeNotes(entry.notes || entry.changes || []);
+                changelogHtml += '<div class="lvsc-changelog-entry">';
+                changelogHtml += '<div class="lvsc-changelog-entry__head"><span class="lvsc-changelog-entry__ver">v' + escapeLocalHtml(entry.version || '-') + '</span>';
+                if (entry.title) changelogHtml += '<span class="lvsc-changelog-entry__title">' + escapeLocalHtml(entry.title.replace(/^神识清理\s*v?[\d.]+/, '').trim()) + '</span>';
+                changelogHtml += '</div>';
+                changelogHtml += '<ul>' + entryNotes.map(function (n) { return '<li>' + escapeLocalHtml(n) + '</li>'; }).join('') + '</ul>';
+                changelogHtml += '</div>';
+            }
+            changelogHtml += '</div>';
+        }
+
         var installUrl = versionedInstallUrl(release);
         var modal = document.createElement('div');
         modal.id = 'lvscUpdateModal';
@@ -3166,8 +3196,10 @@
             '<div class="lvsc-update-card">' +
             '<div class="lvsc-update-kicker">' + escapeLocalHtml(options.kicker || '更新公告') + '</div>' +
             '<div class="lvsc-update-title">' + escapeLocalHtml(release.title || ('神识清理 v' + release.version)) + '</div>' +
-            '<div class="lvsc-update-version">当前 ' + escapeLocalHtml(SCRIPT_VERSION) + ' · 公告 ' + escapeLocalHtml(release.version || '-') + '</div>' +
-            '<ul>' + notes.map(function (note) { return '<li>' + escapeLocalHtml(note) + '</li>'; }).join('') + '</ul>' +
+            '<div class="lvsc-update-version">当前 ' + escapeLocalHtml(SCRIPT_VERSION) + ' · 最新 ' + escapeLocalHtml(release.version || '-') + '</div>' +
+            '<div class="lvsc-update-section-label">本次更新</div>' +
+            '<ul>' + rawNotes.map(function (note) { return '<li>' + escapeLocalHtml(note) + '</li>'; }).join('') + '</ul>' +
+            changelogHtml +
             (installUrl ? '<div class="lvsc-update-actions"><a class="lvsc-update-link" href="' + escapeLocalHtml(installUrl) + '" target="_blank" rel="noopener">打开安装页</a><button id="lvscUpdateCopyBtn">复制更新地址</button></div>' : '') +
             '<button id="lvscUpdateCloseBtn">知道了</button>' +
             '</div>';
@@ -3373,6 +3405,15 @@
             '.lvsc-update-version{font-size:12px;color:#9be7c3;margin-bottom:12px}',
             '.lvsc-update-card ul{margin:0 0 14px 18px;padding:0;color:#e9dfcf}',
             '.lvsc-update-card li{margin:6px 0}',
+            '.lvsc-update-section-label{font-size:11px;font-weight:700;color:#dbb970;margin:10px 0 4px;text-transform:uppercase;letter-spacing:1px}',
+            '.lvsc-changelog{margin-top:14px;border-top:1px solid rgba(219,185,112,.2);padding-top:12px}',
+            '.lvsc-changelog-title{font-size:13px;font-weight:700;color:#dbb970;margin-bottom:10px}',
+            '.lvsc-changelog-entry{margin-bottom:10px;padding:8px 10px;border-radius:6px;background:rgba(255,255,255,.03)}',
+            '.lvsc-changelog-entry__head{display:flex;align-items:center;gap:8px;margin-bottom:2px}',
+            '.lvsc-changelog-entry__ver{font-size:11px;font-weight:700;color:#d8b4fe;background:rgba(216,180,254,.12);padding:1px 6px;border-radius:4px}',
+            '.lvsc-changelog-entry__title{font-size:11px;color:#cfc6b2}',
+            '.lvsc-changelog-entry ul{margin:4px 0 0 16px!important;padding:0!important}',
+            '.lvsc-changelog-entry li{font-size:11px;color:#9b927f!important;margin:3px 0!important}',
             '.lvsc-update-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}',
             '.lvsc-update-link,#lvscUpdateCopyBtn{display:flex;align-items:center;justify-content:center;min-height:34px;border-radius:7px;text-decoration:none;border:1px solid rgba(216,180,254,.28)!important;background:rgba(216,180,254,.12);color:#d8b4fe;font-weight:700}',
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',

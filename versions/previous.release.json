@@ -1,8 +1,22 @@
 {
-  "version": "1.1.3",
-  "title": "神识清理 v1.1.3",
+  "version": "1.1.4",
+  "title": "神识清理 v1.1.4",
   "notes": [
-    "修复云端公告缓存问题：GitHub raw 和 jsDelivr CDN 的 release.json URL 均加 v 参数，每次发布自动破缓存，不再显示旧公告。"
+    "新增历史公告：更新弹窗显示完整版本历史，从 v1.1.0 起记录每次变更。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.1.3"
+  "changelog": [
+    {"version": "1.1.4", "title": "历史公告", "notes": ["更新弹窗新增历史公告面板，从 v1.1.0 起记录每次版本变更。"]},
+    {"version": "1.1.3", "title": "修复云端公告缓存", "notes": ["GitHub raw 和 jsDelivr CDN URL 均加版本参数，每次发布自动破缓存。"]},
+    {"version": "1.1.2", "title": "收徒简化", "notes": ["每条世界消息直接调 /api/master/invite API，服务器判断能否收，不再预过滤境界。"]},
+    {"version": "1.1.1", "title": "传音筒开关", "notes": ["传音筒始终上层改为可选项，在\"更新\"面板新增开关。"]},
+    {"version": "1.1.0", "title": "大版本发布", "notes": [
+      "宗门快速回血全面重写：纯 API 驱动，优先宗门商铺 service 类商品，回退灵气疗伤 API。",
+      "新增装备自动维修：通过 /api/game/equipment/repair-all API 一键修复，自动检测 wearRate。",
+      "新增自动收徒：监控世界聊天，每条消息直接调收徒 API。",
+      "新增收徒日志面板：实时显示检测、跳过、成功、失败记录。",
+      "新增传音筒 z-index 提升，聊天面板始终在游戏上层。",
+      "云端更新检测增加 10 秒超时 + jsDelivr CDN 镜像回退。"
+    ]}
+  ],
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.1.4"
 }
