@@ -117,9 +117,14 @@
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
         {
+            version: '1.2.4',
+            title: '修复云端更新检测',
+            notes: ['修复 checkCloudUpdate 中 url 未定义的 bug。']
+        },
+        {
             version: '1.2.3',
-            title: '版本检测走国内服务器',
-            notes: ['更新检测优先从 online-server/api/version 获取，国内直连无需 VPN。']
+            title: '更新检测走 Gitee',
+            notes: ['默认更新检测 URL 改为 Gitee 国内直连，无需 VPN。发布脚本自动双平台推送。']
         },
         {
             version: '1.2.2',
@@ -192,7 +197,7 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '商人购买新增"严格匹配"开关：关掉则品质或名字满足其一即购买（OR 模式）。'
+            '修复云端更新检测 url 未定义的报错，恢复版本检查功能。'
         ]
     };
 
