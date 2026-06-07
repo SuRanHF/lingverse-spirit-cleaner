@@ -7,8 +7,8 @@
 // @match        http://ling.muge.info/game.html*
 // @homepageURL  https://github.com/SuRanHF/lingverse-spirit-cleaner
 // @supportURL   https://github.com/SuRanHF/lingverse-spirit-cleaner/issues
-// @updateURL    https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js
-// @downloadURL  https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js
+// @updateURL    https://gitee.com/wanoujj/lingverse-spirit-cleaner/raw/main/lingverse-spirit-cleaner.user.js
+// @downloadURL  https://gitee.com/wanoujj/lingverse-spirit-cleaner/raw/main/lingverse-spirit-cleaner.user.js
 // @grant        GM_xmlhttpRequest
 // @connect      lingshen.ccwu.cc
 // @connect      qyapi.weixin.qq.com
