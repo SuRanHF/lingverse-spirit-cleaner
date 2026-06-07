@@ -110,12 +110,17 @@
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
     var ONLINE_HEARTBEAT_MS = 30000;
     var GITHUB_REPO_SLUG = 'SuRanHF/lingverse-spirit-cleaner';
-    var DEFAULT_UPDATE_MANIFEST_URL = 'https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/release.json?v=' + SCRIPT_VERSION;
+    var DEFAULT_UPDATE_MANIFEST_URL = 'https://gitee.com/SuRanHF/lingverse-spirit-cleaner/raw/main/release.json?v=' + SCRIPT_VERSION;
     var DEFAULT_ONLINE_STATS_ENDPOINT = 'http://lingshen.ccwu.cc/api/heartbeat';
     var onlineHeartbeatStarted = false;
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.2.3',
+            title: '版本检测走国内服务器',
+            notes: ['更新检测优先从 online-server/api/version 获取，国内直连无需 VPN。']
+        },
         {
             version: '1.2.2',
             title: '商人严格匹配开关',
@@ -301,10 +306,12 @@
     }
 
     function onlineStatsPayload() {
+        var player = getPlayer() || {};
         return {
             clientId: onlineClientId(),
             version: SCRIPT_VERSION,
             page: location.origin + location.pathname,
+            playerName: player.name || player.playerName || localStorage.getItem('playerName') || '',
             running: !!running,
             monitoringSpirit: !!monitoringSpirit,
             autoTrialRunning: !!autoTrialRunning,
@@ -3576,11 +3583,10 @@
             if (manual) setStatus('检测云端更新中', 'run');
 
             var release = null;
-            // 优先从自己的服务器检测版本（国内直连，无需 VPN）
-            var localUrl = (state.onlineStatsEndpoint || DEFAULT_ONLINE_STATS_ENDPOINT).replace('/api/heartbeat', '/api/version');
-            var urls = [localUrl];
-            // 回退：GitHub raw + jsDelivr CDN
-            if (state.updateManifestUrl) urls.push(state.updateManifestUrl);
+            // 优先从 Gitee 获取（国内直连，无需 VPN）
+            var urls = [url];
+            // 回退：online-server + GitHub + jsDelivr
+            urls.push((state.onlineStatsEndpoint || DEFAULT_ONLINE_STATS_ENDPOINT).replace('/api/heartbeat', '/api/version'));
             urls.push('https://raw.githubusercontent.com/' + GITHUB_REPO_SLUG + '/main/release.json?v=' + SCRIPT_VERSION);
             urls.push('https://cdn.jsdelivr.net/gh/' + GITHUB_REPO_SLUG + '@main/release.json?v=' + SCRIPT_VERSION);
 

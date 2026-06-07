@@ -187,7 +187,7 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '更新检测优先从 online-server 获取版本，国内直连无需 VPN。'
+            '商人购买新增"严格匹配"开关：关掉则品质或名字满足其一即购买（OR 模式）。'
         ]
     };
 
@@ -3571,18 +3571,22 @@
     async function checkCloudUpdate(manual) {
         if (checkingCloudUpdate) return false;
         syncSettingsFromUi();
+        var url = state.updateManifestUrl;
+        if (!url) {
+            if (manual) setStatus('请先填写云端公告 JSON 地址', 'warn');
+            return;
+        }
         checkingCloudUpdate = true;
         try {
             if (manual) setStatus('检测云端更新中', 'run');
 
             var release = null;
-            // 优先从自己的服务器检测版本（国内直连，无需 VPN）
-            var localUrl = (state.onlineStatsEndpoint || DEFAULT_ONLINE_STATS_ENDPOINT).replace('/api/heartbeat', '/api/version');
-            var urls = [localUrl];
-            // 回退：GitHub raw + jsDelivr CDN
-            if (state.updateManifestUrl) urls.push(state.updateManifestUrl);
-            urls.push('https://raw.githubusercontent.com/' + GITHUB_REPO_SLUG + '/main/release.json?v=' + SCRIPT_VERSION);
-            urls.push('https://cdn.jsdelivr.net/gh/' + GITHUB_REPO_SLUG + '@main/release.json?v=' + SCRIPT_VERSION);
+            var urls = [url];
+
+            // CDN fallback: if using the default GitHub raw URL, also try jsDelivr mirror
+            if (url.indexOf('raw.githubusercontent.com/' + GITHUB_REPO_SLUG) >= 0) {
+                urls.push('https://cdn.jsdelivr.net/gh/' + GITHUB_REPO_SLUG + '@main/release.json?v=' + SCRIPT_VERSION);
+            }
 
             for (var u = 0; u < urls.length; u++) {
                 try {
@@ -3606,8 +3610,8 @@
             }
 
             var newer = compareVersion(release.version, SCRIPT_VERSION) > 0;
-            var seenKey = 'lvSpiritCleaner.seenCloudVersion';
-            var remindKey = 'lvSpiritCleaner.lastCloudReminder';
+            var seenKey = 'lvSpiritCleaner.seenCloudVersion.' + simpleHash(url);
+            var remindKey = 'lvSpiritCleaner.lastCloudReminder.' + simpleHash(url);
             var lastReminderAt = Number(localStorage.getItem(remindKey) || 0);
             var shouldRemind = manual || localStorage.getItem(seenKey) !== release.version || Date.now() - lastReminderAt > CLOUD_UPDATE_REMIND_MS;
             if (newer && shouldRemind) {
