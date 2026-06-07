@@ -30,7 +30,12 @@ $ErrorActionPreference = "Stop"
 $Port = 18766
 $OnlineWindowSeconds = 90
 $Clients = @{}
+$FeedbackFile = Join-Path $PSScriptRoot "feedbacks.json"
 $Feedbacks = @()
+if (Test-Path $FeedbackFile) {
+    try { $Feedbacks = Get-Content $FeedbackFile -Raw -Encoding UTF8 | ConvertFrom-Json; if ($null -eq $Feedbacks) { $Feedbacks = @() } } catch { $Feedbacks = @() }
+    if ($Feedbacks -isnot [array]) { $Feedbacks = @($Feedbacks) }
+}
 
 function NowMs {
     return [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -296,12 +301,15 @@ while ($true) {
 
         if ($request.Method -eq "POST" -and $request.Path -eq "/api/feedback") {
             $data = $request.Body | ConvertFrom-Json
-            $Feedbacks += [ordered]@{
+            $entry = [ordered]@{
                 text = [string]$data.text
                 playerName = [string]$data.playerName
                 version = [string]$data.version
                 time = [DateTimeOffset]::UtcNow.UtcDateTime.ToString("o")
             }
+            $Feedbacks += $entry
+            if ($Feedbacks.Count -gt 200) { $Feedbacks = @($Feedbacks | Select-Object -Last 200) }
+            try { $Feedbacks | ConvertTo-Json -Depth 4 | Out-File -LiteralPath $FeedbackFile -Encoding UTF8 } catch {}
             Write-JsonResponse $stream 200 ([ordered]@{ ok = $true })
             continue
         }
