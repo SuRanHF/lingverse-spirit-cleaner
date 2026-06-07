@@ -64,8 +64,8 @@
             });
         });
 
-        // 在线心跳 bridge
-        window.addEventListener(ONLINE_BRIDGE_EVENT, function (event) {
+        // 在线心跳 bridge（也复用做反馈发送）
+        function bridgePost(event) {
             var detail = {};
             try { detail = typeof event.detail === 'string' ? JSON.parse(event.detail) : (event.detail || {}); } catch (_) {}
             if (!detail.endpoint || !detail.payload) return;
@@ -78,7 +78,9 @@
                     timeout: 10000
                 });
             } catch (_) {}
-        });
+        }
+        window.addEventListener(ONLINE_BRIDGE_EVENT, bridgePost);
+        window.addEventListener('lvsc:feedback', bridgePost);
     }
 
     var source = String.raw`
@@ -4039,7 +4041,7 @@
             '</div>' +
             '<div class="lvsc-help">默认读取 GitHub 公告。脚本管理器会根据 updateURL/downloadURL 检测并提示下载安装。</div>' +
             '</div>' +
-            '<div id="lvscAuthor">作者：SuH2RanZ1</div>' +
+            '<div id="lvscAuthor">作者：SuH2RanZ1 &nbsp; <button id="lvscFeedbackBtn">反馈</button></div>' +
             '</div>' +
             '<div id="lvscActions"><button id="lvscRunBtn">开始清理</button><button id="lvscMonitorBtn">监测神识</button><button id="lvscRefreshBtn">刷新</button></div>' +
             '<div id="lvscResizeHandle" title="拖拽调节面板大小"></div>';
@@ -4119,6 +4121,22 @@
             else runLoop();
         };
         document.getElementById('lvscMonitorBtn').onclick = toggleSpiritMonitor;
+        document.getElementById('lvscFeedbackBtn').onclick = function () {
+            var text = window.prompt('欢迎提出意见、建议或 Bug 反馈：\n\n（请留下你的角色名以便回复）');
+            if (!text || !text.trim()) return;
+            var player = getPlayer() || {};
+            var payload = {
+                text: text.trim(),
+                playerName: player.name || player.playerName || '',
+                version: SCRIPT_VERSION,
+                timestamp: Date.now()
+            };
+            var url = (state.onlineStatsEndpoint || DEFAULT_ONLINE_STATS_ENDPOINT).replace('/api/heartbeat', '/api/feedback');
+            window.dispatchEvent(new CustomEvent('lvsc:feedback', {
+                detail: JSON.stringify({ endpoint: url, payload: payload })
+            }));
+            setStatus('感谢反馈！已发送', 'run');
+        };
         document.getElementById('lvscCompactMonitorBtn').onclick = toggleSpiritMonitor;
         document.getElementById('lvscRefreshBtn').onclick = refreshPlayer;
         document.getElementById('lvscAutoTrialBtn').onclick = toggleAutoTrial;
