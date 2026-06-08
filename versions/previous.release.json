@@ -1,37 +1,52 @@
 {
-  "version": "1.2.6",
-  "title": "神识清理 v1.2.6",
+  "version": "1.2.8",
+  "title": "神识清理 v1.2.8",
   "notes": [
-    "6个方案A通知：商人购买/装备维修/冥想完成/藏宝图批次/铭文命中/虚空淬体。私聊监听修复。"
+    "修复本命吞噬：改查背包(/api/game/inventory)，兼容type/slot/attackBonus等多种字段名。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.6",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.8",
   "changelog": [
+    {
+      "version": "1.2.8",
+      "title": "本命吞噬修复",
+      "notes": [
+        "改查背包装备而非已装备",
+        "兼容多种字段名(type/equipSlot等)"
+      ]
+    },
+    {
+      "version": "1.2.7",
+      "title": "本命武器自动吞噬",
+      "notes": [
+        "主循环自动吞噬装备/材料"
+      ]
+    },
     {
       "version": "1.2.6",
       "title": "细分通知+私聊监听",
       "notes": [
-        "6个方案A新增通知",
-        "私聊道友消息监听修复"
+        "6个方案A通知",
+        "道友私聊修复"
       ]
     },
     {
       "version": "1.2.5",
       "title": "反馈按钮+Gitee更新",
       "notes": [
-        "面板底部新增反馈按钮",
-        "@updateURL改为Gitee"
+        "反馈按钮",
+        "@updateURL改Gitee"
       ]
     },
     {
       "version": "1.2.4",
-      "title": "修复云端更新检测",
+      "title": "修复云端更新",
       "notes": [
-        "修复url未定义"
+        "url未定义"
       ]
     },
     {
       "version": "1.2.3",
-      "title": "更新检测走Gitee",
+      "title": "检测走Gitee",
       "notes": [
         "默认URL改为Gitee"
       ]
@@ -40,12 +55,12 @@
       "version": "1.2.2",
       "title": "商人严格匹配",
       "notes": [
-        "新增AND/OR切换"
+        "AND/OR切换"
       ]
     },
     {
       "version": "1.2.1",
-      "title": "高级冥想探索",
+      "title": "高级冥想",
       "notes": [
         "够探索就继续"
       ]

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.2.8
+// @version      1.2.9
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.2.8';
+    var SCRIPT_VERSION = '1.2.9';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -214,7 +214,7 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '新增本命武器自动吞噬：优先吞噬同类型有属性装备，无装备时自动吞噬材料。'
+            '修复本命吞噬：改查背包(/api/game/inventory)，兼容type/slot/attackBonus等多种字段名。'
         ]
     };
 
@@ -1855,17 +1855,15 @@
                 if (!item) continue;
                 if (item.isNatalArtifact || item.isNatal || item.isLocked || item.isEquipped || item.isIncarnationEquipped) continue;
                 var itemType = String(item.type || item.equipSlot || '').toLowerCase();
-                if (itemType !== slot) continue;
-                var hasBonus = (item.attackBonus || item.defenseBonus || item.hpBonus || item.spiritBonus || item.atk || item.def || item.hp);
-                if (!hasBonus) continue;
+                if (itemType && itemType !== slot) continue;
                 var itemId = item.id || item.itemId || item.instanceId;
                 if (!itemId) continue;
-                setStatus('本命吞噬装备: ' + (item.name || item.itemName || ''), 'run');
+                setStatus('本命吞噬: ' + (item.name || item.itemName || '?'), 'run');
                 try {
                     var devRes = await gameApi().post('/api/game/natal/artifact/devour-equipment', { itemId: Number(itemId), investPercent: 100 });
                     if (devRes && devRes.code === 200) {
-                        setStatus('本命吞噬装备完成', 'run');
-                        wecomEnqueue('本命吞噬', '已吞噬装备: ' + (item.name || item.itemName || ''));
+                        setStatus('吞噬装备完成', 'run');
+                        wecomEnqueue('本命吞噬', '装备: ' + (item.name || item.itemName || ''));
                         await sleep(500);
                         await refreshPlayer();
                         return true;
