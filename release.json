@@ -2,7 +2,127 @@
   "version": "1.2.7",
   "title": "神识清理 v1.2.7",
   "notes": [
-    "6个方案A通知：商人购买/装备维修/冥想完成/藏宝图批次/铭文命中/虚空淬体。私聊监听修复。"
+    "新增本命武器自动吞噬：优先吞噬同类型有属性装备，无装备时自动吞噬材料。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.7"
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.7",
+  "changelog": [
+    {
+      "version": "1.2.7",
+      "title": "本命武器自动吞噬",
+      "notes": [
+        "主循环自动吞噬装备/材料",
+        "UI新增自动吞噬开关+手动吞噬按钮"
+      ]
+    },
+    {
+      "version": "1.2.6",
+      "title": "细分通知+私聊监听",
+      "notes": [
+        "6个方案A新增通知",
+        "道友私聊监听修复"
+      ]
+    },
+    {
+      "version": "1.2.5",
+      "title": "反馈按钮+Gitee更新",
+      "notes": [
+        "反馈按钮",
+        "@updateURL改为Gitee"
+      ]
+    },
+    {
+      "version": "1.2.4",
+      "title": "修复云端更新检测",
+      "notes": [
+        "修复url未定义"
+      ]
+    },
+    {
+      "version": "1.2.3",
+      "title": "更新检测走Gitee",
+      "notes": [
+        "默认URL改为Gitee"
+      ]
+    },
+    {
+      "version": "1.2.2",
+      "title": "商人严格匹配",
+      "notes": [
+        "AND/OR切换"
+      ]
+    },
+    {
+      "version": "1.2.1",
+      "title": "高级冥想探索",
+      "notes": [
+        "够探索就继续"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "title": "大更新",
+      "notes": [
+        "铭文天纹",
+        "商人品质",
+        "复活区域",
+        "回血排序",
+        "企业微信",
+        "通知+徒弟"
+      ]
+    },
+    {
+      "version": "1.1.6",
+      "title": "修复加载",
+      "notes": [
+        "删除重复花括号"
+      ]
+    },
+    {
+      "version": "1.1.5",
+      "title": "历史公告",
+      "notes": [
+        "BUILTIN_CHANGELOG独立"
+      ]
+    },
+    {
+      "version": "1.1.4",
+      "title": "历史面板",
+      "notes": [
+        "更新弹窗加历史"
+      ]
+    },
+    {
+      "version": "1.1.3",
+      "title": "公告缓存",
+      "notes": [
+        "URL加版本参数"
+      ]
+    },
+    {
+      "version": "1.1.2",
+      "title": "收徒简化",
+      "notes": [
+        "直接调API"
+      ]
+    },
+    {
+      "version": "1.1.1",
+      "title": "传音筒开关",
+      "notes": [
+        "可选项"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "title": "大版本",
+      "notes": [
+        "宗门回血",
+        "装备维修",
+        "自动收徒",
+        "日志",
+        "z-index",
+        "CDN"
+      ]
+    }
+  ]
 }
