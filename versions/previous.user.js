@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.2.5
+// @version      1.2.6
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.2.6';
+    var SCRIPT_VERSION = '1.2.7';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -118,6 +118,11 @@
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.2.7',
+            title: '本命武器自动吞噬',
+            notes: ['主循环自动吞噬装备（优先同类型有属性）或材料，支持手动按钮。', 'UI新增：战斗恢复→本命武器→自动吞噬+手动吞噬按钮。']
+        },
         {
             version: '1.2.6',
             title: '细分通知 + 私聊监听',
@@ -209,7 +214,8 @@
         version: SCRIPT_VERSION,
         title: '神识清理 v' + SCRIPT_VERSION,
         notes: [
-            '6个细分通知：商人购买/装备维修/冥想完成/藏宝图/铭文命中/虚空淬体。私聊监听修复。'
+            '新增本命武器自动吞噬：优先吞噬同类型有属性装备，无装备时自动吞噬材料。'
+        ]
         ]
     };
 
@@ -268,6 +274,7 @@
         autoRepair: localStorage.getItem('lvSpiritCleaner.autoRepair') !== '0',
         repairThreshold: readNumber('lvSpiritCleaner.repairThreshold', 70),
         reviveExploreArea: localStorage.getItem('lvSpiritCleaner.reviveExploreArea') || '',
+        autoNatalDevour: localStorage.getItem('lvSpiritCleaner.autoNatalDevour') === '1',
         autoRecruit: localStorage.getItem('lvSpiritCleaner.autoRecruit') === '1',
         recruitIntervalMs: readNumber('lvSpiritCleaner.recruitIntervalMs', 5000),
         chatOnTop: localStorage.getItem('lvSpiritCleaner.chatOnTop') !== '0',
@@ -547,6 +554,7 @@
         var autoRepairInput = document.getElementById('lvscAutoRepair');
         var repairThresholdInput = document.getElementById('lvscRepairThreshold');
         var reviveExploreAreaInput = document.getElementById('lvscReviveExploreArea');
+        var autoNatalDevourInput = document.getElementById('lvscAutoNatalDevour');
         var autoRecruitInput = document.getElementById('lvscAutoRecruit');
         var recruitIntervalInput = document.getElementById('lvscRecruitIntervalMs');
         var chatOnTopInput = document.getElementById('lvscChatOnTop');
@@ -615,6 +623,7 @@
         state.autoRepair = !!(autoRepairInput && autoRepairInput.checked);
         state.repairThreshold = Math.max(0, Math.min(100, Number(repairThresholdInput && repairThresholdInput.value || 70)));
         state.reviveExploreArea = String(reviveExploreAreaInput && reviveExploreAreaInput.value || '').trim();
+        state.autoNatalDevour = !!(autoNatalDevourInput && autoNatalDevourInput.checked);
         state.autoRecruit = !!(autoRecruitInput && autoRecruitInput.checked);
         state.recruitIntervalMs = Math.max(1000, Number(recruitIntervalInput && recruitIntervalInput.value || 5000));
         state.chatOnTop = !!(chatOnTopInput && chatOnTopInput.checked);
@@ -677,6 +686,7 @@
         localStorage.setItem('lvSpiritCleaner.autoRepair', state.autoRepair ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.repairThreshold', String(state.repairThreshold));
         localStorage.setItem('lvSpiritCleaner.reviveExploreArea', state.reviveExploreArea);
+        localStorage.setItem('lvSpiritCleaner.autoNatalDevour', state.autoNatalDevour ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.autoRecruit', state.autoRecruit ? '1' : '0');
         localStorage.setItem('lvSpiritCleaner.recruitIntervalMs', String(state.recruitIntervalMs));
         localStorage.setItem('lvSpiritCleaner.chatOnTop', state.chatOnTop ? '1' : '0');
@@ -1816,6 +1826,68 @@
                 }
             }
         } catch (_) {}
+        return false;
+    }
+
+    async function triggerAutoNatalDevour(manual) {
+        if (!gameApi()) return false;
+        syncSettingsFromUi();
+        if (!state.autoNatalDevour && !manual) return false;
+
+        try {
+            // Get natal artifact info
+            var infoRes = await gameApi().get('/api/game/natal/artifact');
+            if (!infoRes || infoRes.code !== 200 || !infoRes.data || !infoRes.data.exists) {
+                if (manual) setStatus('未找到本命法宝，请先凝练', 'warn');
+                return false;
+            }
+            var info = infoRes.data;
+            var slot = info.slot || 'weapon';
+            setStatus('本命吞噬：查找可吞噬装备', 'run');
+
+            // Try equipment devour first
+            var eqRes = await gameApi().get('/api/game/equipment/current');
+            if (eqRes && eqRes.code === 200 && Array.isArray(eqRes.data)) {
+                for (var i = 0; i < eqRes.data.length; i++) {
+                    var item = eqRes.data[i];
+                    if (!item || item.isNatalArtifact || item.isNatal || item.isLocked || item.isEquipped) continue;
+                    if (item.type !== slot) continue;
+                    var hasBonus = (item.attackBonus || item.defenseBonus || item.hpBonus || item.spiritBonus);
+                    if (!hasBonus) continue;
+                    var itemId = item.id || item.itemId;
+                    if (!itemId) continue;
+                    setStatus('本命吞噬装备: ' + (item.name || ''), 'run');
+                    try {
+                        var devRes = await gameApi().post('/api/game/natal/artifact/devour-equipment', { itemId: itemId, investPercent: 100 });
+                        if (devRes && devRes.code === 200) {
+                            setStatus('本命吞噬装备完成: ' + (item.name || ''), 'run');
+                            wecomEnqueue('本命吞噬', '已吞噬装备: ' + (item.name || '') + ' (攻/防/血/神)');
+                            await sleep(500);
+                            await refreshPlayer();
+                            return true;
+                        }
+                    } catch (_) {}
+                    break; // Only try one equipment per call to avoid over-consuming
+                }
+            }
+
+            // Fallback: devour materials
+            setStatus('本命吞噬材料', 'run');
+            try {
+                var matRes = await gameApi().post('/api/game/natal/artifact/devour', { investPercent: 100 });
+                if (matRes && matRes.code === 200) {
+                    setStatus('本命吞噬材料完成', 'run');
+                    wecomEnqueue('本命吞噬', '已吞噬材料，第 ' + (info.devourCount + 1) + ' 次');
+                    await sleep(500);
+                    await refreshPlayer();
+                    return true;
+                }
+                if (matRes && matRes.message) setStatus('本命吞噬失败: ' + matRes.message, 'warn');
+            } catch (_) {}
+        } catch (err) {
+            console.warn('[LingVerse Spirit Cleaner] natal devour failed', err);
+        }
+        if (manual) setStatus('本命吞噬失败', 'warn');
         return false;
     }
 
@@ -3114,6 +3186,10 @@
                 await triggerAutoRepair(false);
             }
 
+            if (state.autoNatalDevour) {
+                await triggerAutoNatalDevour(false);
+            }
+
             if (state.autoMasterRequests) {
                 await handleMasterRequests();
             }
@@ -3988,6 +4064,13 @@
             '<div class="lvsc-help">通过 API 检测装备耐久（/api/equipment），低于阈值时调用 /api/equipment/repair-all 维修。不依赖页面按钮。</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
+            '<div class="lvsc-section-title-row"><span>本命武器</span><label class="lvsc-check"><input id="lvscAutoNatalDevour" type="checkbox">自动吞噬</label></div>' +
+            '<div class="lvsc-grid2">' +
+            '<button id="lvscNatalDevourBtn">手动吞噬</button>' +
+            '</div>' +
+            '<div class="lvsc-help">自动吞噬装备（优先同类型有属性的装备）或材料。装备吞噬：POST /api/game/natal/artifact/devour-equipment；材料吞噬：POST /api/game/natal/artifact/devour。</div>' +
+            '</div>' +
+            '<div class="lvsc-section">' +
             '<div class="lvsc-section-title-row"><span>自动收徒</span><label class="lvsc-check"><input id="lvscAutoRecruit" type="checkbox">监控世界聊天</label></div>' +
             '<div class="lvsc-grid2">' +
             '<label>冷却间隔(ms)<input id="lvscRecruitIntervalMs" type="number" min="1000" step="500" title="两次收徒之间的最小间隔"></label>' +
@@ -4113,6 +4196,7 @@
         document.getElementById('lvscSectQuickRecovery').checked = state.sectQuickRecovery;
         document.getElementById('lvscAutoRepair').checked = state.autoRepair;
         document.getElementById('lvscRepairThreshold').value = String(state.repairThreshold);
+        document.getElementById('lvscAutoNatalDevour').checked = state.autoNatalDevour;
         document.getElementById('lvscReviveExploreArea').value = String(state.reviveExploreArea);
         document.getElementById('lvscAutoRecruit').checked = state.autoRecruit;
         document.getElementById('lvscRecruitIntervalMs').value = String(state.recruitIntervalMs);
@@ -4208,6 +4292,9 @@
         document.getElementById('lvscRepairBtn').onclick = function () {
             triggerAutoRepair(true);
         };
+        document.getElementById('lvscNatalDevourBtn').onclick = function () {
+            triggerAutoNatalDevour(true);
+        };
         document.getElementById('lvscRecruitBtn').onclick = function () {
             handleChatMessagesBatch();
         };
@@ -4255,6 +4342,7 @@
         document.getElementById('lvscAutoRecoveryTarget').onchange = syncSettingsFromUi;
         document.getElementById('lvscSectQuickRecovery').onchange = syncSettingsFromUi;
         document.getElementById('lvscAutoRepair').onchange = syncSettingsFromUi;
+        document.getElementById('lvscAutoNatalDevour').onchange = syncSettingsFromUi;
         document.getElementById('lvscRepairThreshold').onchange = syncSettingsFromUi;
         document.getElementById('lvscReviveExploreArea').onchange = syncSettingsFromUi;
         document.getElementById('lvscAutoRecruit').onchange = function () {

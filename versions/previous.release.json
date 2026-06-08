@@ -1,46 +1,53 @@
 {
-  "version": "1.2.5",
-  "title": "神识清理 v1.2.5",
+  "version": "1.2.6",
+  "title": "神识清理 v1.2.6",
   "notes": [
-    "新增反馈按钮：面板底部可提交意见，在线服务器仪表盘展示。",
-    "@updateURL/@downloadURL 指向 Gitee，国内直连自动更新。"
+    "6个方案A通知：商人购买/装备维修/冥想完成/藏宝图批次/铭文命中/虚空淬体。私聊监听修复。"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.5",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.2.6",
   "changelog": [
+    {
+      "version": "1.2.6",
+      "title": "细分通知+私聊监听",
+      "notes": [
+        "6个方案A新增通知",
+        "私聊道友消息监听修复"
+      ]
+    },
     {
       "version": "1.2.5",
       "title": "反馈按钮+Gitee更新",
       "notes": [
-        "面板底部新增反馈按钮，自定义弹窗填写意见。",
-        "@updateURL/@downloadURL 改为 Gitee 国内直连。"
+        "面板底部新增反馈按钮",
+        "@updateURL改为Gitee"
       ]
     },
     {
       "version": "1.2.4",
       "title": "修复云端更新检测",
       "notes": [
-        "修复 checkCloudUpdate 中 url 未定义。"
+        "修复url未定义"
       ]
     },
     {
       "version": "1.2.3",
-      "title": "更新检测走 Gitee",
+      "title": "更新检测走Gitee",
       "notes": [
-        "默认 URL 改为 Gitee，发布双推送。"
+        "默认URL改为Gitee"
       ]
     },
     {
       "version": "1.2.2",
       "title": "商人严格匹配",
       "notes": [
-        "新增 AND/OR 切换。"
+        "新增AND/OR切换"
       ]
     },
     {
       "version": "1.2.1",
       "title": "高级冥想探索",
       "notes": [
-        "高级冥想后够探索就继续。"
+        "够探索就继续"
       ]
     },
     {
@@ -48,65 +55,65 @@
       "title": "大更新",
       "notes": [
         "铭文天纹",
-        "商人品质关键词",
-        "复活指定区域",
+        "商人品质",
+        "复活区域",
         "回血排序",
-        "企业微信三通道",
-        "通知+徒弟请求"
+        "企业微信",
+        "通知+徒弟"
       ]
     },
     {
       "version": "1.1.6",
       "title": "修复加载",
       "notes": [
-        "删除重复花括号。"
+        "删除重复花括号"
       ]
     },
     {
       "version": "1.1.5",
-      "title": "历史公告变量",
+      "title": "历史公告",
       "notes": [
-        "BUILTIN_CHANGELOG 独立。"
+        "BUILTIN_CHANGELOG独立"
       ]
     },
     {
       "version": "1.1.4",
-      "title": "历史公告面板",
+      "title": "历史面板",
       "notes": [
-        "更新弹窗新增历史公告面板。"
+        "更新弹窗加历史"
       ]
     },
     {
       "version": "1.1.3",
-      "title": "云端公告缓存",
+      "title": "公告缓存",
       "notes": [
-        "URL 加版本参数破缓存。"
+        "URL加版本参数"
       ]
     },
     {
       "version": "1.1.2",
       "title": "收徒简化",
       "notes": [
-        "直接调API，服务器判断。"
+        "直接调API"
       ]
     },
     {
       "version": "1.1.1",
       "title": "传音筒开关",
       "notes": [
-        "传音筒上层改为可选项。"
+        "可选项"
       ]
     },
     {
       "version": "1.1.0",
-      "title": "大版本发布",
+      "title": "大版本",
       "notes": [
-        "宗门回血API",
+        "宗门回血",
         "装备维修",
         "自动收徒",
-        "收徒日志",
-        "传音筒z-index",
-        "CDN镜像"
+        "日志",
+        "z-index",
+        "CDN"
       ]
     }
   ]
