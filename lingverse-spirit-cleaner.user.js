@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.8
+// @version      1.3.9
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.8';
+    var SCRIPT_VERSION = '1.3.9';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -116,38 +116,34 @@
     var DEFAULT_ONLINE_STATS_ENDPOINT = 'http://lingshen.ccwu.cc/api/heartbeat';
     var onlineHeartbeatStarted = false;
 
-    // 定时简报：每5分钟发一次运行摘要到微信
-    var _reportTimer = 0;
-    var _reportExploreCount = 0;
-    var _reportReviveCount = 0;
-    var _reportStartTime = 0;
-    var REPORT_INTERVAL_MS = 300000; // 5分钟
+    // 清理统计
+    var _cleanStats = { explores: 0, combats: 0, combatExp: 0, deaths: 0, startTime: 0, startSpirit: 0, startRealm: '', startRealmPct: 0 };
+    var _lastCleanReport = 0;
+    var _lastMeditateReport = 0;
 
-    function resetReportStats() {
-        _reportExploreCount = 0;
-        _reportReviveCount = 0;
-        _reportStartTime = Date.now();
-    }
-
-    async function sendPeriodicReport(manual) {
-        if (!state.wecomNotify || !state.wecomNotifyWebhook) return;
-        if (!manual && Date.now() - _reportStartTime < REPORT_INTERVAL_MS) return;
+    function resetCleanStats() {
+        _cleanStats = { explores: 0, combats: 0, combatExp: 0, deaths: 0, startTime: Date.now(), startSpirit: 0, startRealm: '', startRealmPct: 0 };
+        _lastCleanReport = 0;
+        _lastMeditateReport = 0;
+        var p = getPlayer() || {};
+        _cleanStats.startRealm = p.realm || p.realmName || '';
+        _cleanStats.startRealmPct = parseFloat(p.realmProgress || p.progress || 0) || 0;
         var info = getSpiritInfo();
-        var playerName = (info.player && info.player.name) || '';
-        var flag = running ? '清理中' : monitoringSpirit ? '监测中' : autoTrialRunning ? '试炼中' : autoTreasureRunning ? '刷图中' : autoInscriptionRunning ? '洗练中' : '空闲';
-        var lines = [
-            '角色: ' + (playerName || '未知'),
-            '状态: ' + flag + ' | v' + SCRIPT_VERSION,
-            '神识: ' + info.spirit + '/' + info.maxSpirit + ' (每次-' + info.cost + ')',
-        ];
-        if (_reportExploreCount > 0) lines.push('本时段探索: ' + _reportExploreCount + ' 次');
-        if (_reportReviveCount > 0) lines.push('复活: ' + _reportReviveCount + ' 次');
-        wecomEnqueue('运行简报', lines.join('\n'));
-        resetReportStats();
+        _cleanStats.startSpirit = info.maxSpirit || 0;
     }
 
-    function recordExploreDone() { if (running) _reportExploreCount++; }
-    function recordReviveDone() { _reportReviveCount++; }
+    function getPlayerRealmStr() {
+        var p = getPlayer() || {};
+        var realm = p.realm || p.realmName || '?';
+        var pct = parseFloat(p.realmProgress || p.progress || 0) || 0;
+        return realm + ' ' + pct.toFixed(1) + '%';
+    }
+    function getCurrentAreaName() {
+        var a = findGameAreaOptions();
+        // 从 game state 推断当前区域
+        var p = getPlayer() || {};
+        return p.currentArea || p.area || p.zone || (a.length > 0 ? a[0] : '');
+    }
     var autoBailRunning = false;
     // 自动出狱：检测并保释
     async function checkAndAutoBail(manual) {
@@ -954,7 +950,9 @@
         busyEvent = true;
         try {
             setStatus('检测到陨落，尝试引渡归来', 'warn');
-            wecomEnqueue('角色陨落', '游戏中角色已死亡，脚本尝试自动引渡复活');
+            _cleanStats.deaths++;
+            var deadArea = getCurrentAreaName();
+            wecomEnqueue('💀 角色陨落', '位置：' + (deadArea || '未知') + '\n正在尝试引渡复活...');
             var revived = false;
             if (typeof window.revivePlayer === 'function') {
                 try {
@@ -1045,7 +1043,8 @@
                 }
             }
             setStatus('已引渡归来，继续流程', 'run');
-            recordReviveDone();
+            var toArea = state.reviveExploreArea || '原地';
+            wecomEnqueue('🔄 已引渡归来', '前往：' + toArea + '\n将恢复 HP/MP 后继续清理');
             return true;
         } catch (err2) {
             console.warn('[LingVerse Spirit Cleaner] death revive failed', err2);
@@ -1176,6 +1175,11 @@
         if (!state.useAdvancedMeditate || !gameApi()) return false;
         try {
             setStatus('尝试仙缘高级冥想', 'run');
+            var adBefore = 0;
+            try {
+                var adRes = await gameApi().get('/api/master/overview');
+                adBefore = (adRes && adRes.data && adRes.data.adPoints) || 0;
+            } catch (_) {}
             var res = await gameApi().post('/api/game/meditate/instant', { grade: 2 });
             if (!res || res.code !== 200) {
                 setStatus('高级冥想失败，转普通冥想：' + ((res && res.message) || '未知原因'), 'warn');
@@ -1186,7 +1190,13 @@
             }
             if (typeof window.loadGameLogs === 'function') window.loadGameLogs();
             await refreshPlayer();
+            var adAfter = 0;
+            try {
+                var adRes2 = await gameApi().get('/api/master/overview');
+                adAfter = (adRes2 && adRes2.data && adRes2.data.adPoints) || 0;
+            } catch (_) {}
             setStatus('高级冥想已完成', 'run');
+            wecomEnqueue('✨ 高级冥想', '使用前仙缘：' + adBefore + '\n使用后仙缘：' + adAfter + '\n神识：已恢复');
             return true;
         } catch (err) {
             console.warn('[LingVerse Spirit Cleaner] advanced meditate failed', err);
@@ -1203,10 +1213,8 @@
         if (info.maxSpirit <= 0 || info.spirit >= targetSpirit) return true;
 
         setStatus('神识不足，开始冥想到 ' + targetSpirit, 'run');
-        wecomEnqueue('神识不足', '当前神识 ' + info.spirit + '/' + info.maxSpirit + '，开始冥想恢复');
         if (await tryAdvancedMeditateOnce()) {
             info = getSpiritInfo();
-            // 高级冥想够探索就继续，不用回满
             if (info.spirit >= info.cost && info.spirit > state.reserve) return true;
             if (info.spirit >= targetSpirit) return true;
         }
@@ -1217,6 +1225,9 @@
         }
 
         var spiritPerMinute = Number(startRes.data && startRes.data.spiritPerMinute || window.meditationSpiritRate || 0);
+        var estMin = info.maxSpirit > 0 && spiritPerMinute > 0 ? Math.ceil((targetSpirit - info.spirit) / spiritPerMinute) : '?';
+        wecomEnqueue('🧘 开始冥想', '当前神识：' + info.spirit + '/' + info.maxSpirit + '\n目标神识：' + targetSpirit + '\n预计恢复：约 ' + estMin + '分钟后\n预计下一轮清理：' + new Date(Date.now() + (Number(estMin) || 0) * 60000).toLocaleTimeString());
+        _lastMeditateReport = Date.now();
         var startedAt = Date.now();
         if (typeof window.startMeditationUI === 'function') {
             try { window.startMeditationUI(); } catch (_) {}
@@ -1229,6 +1240,12 @@
                 spiritPerMinute = Number(statusRes.data.spiritPerMinute || spiritPerMinute || 0);
                 var progress = estimateMeditateProgress(statusRes.data, info, spiritPerMinute, startedAt);
                 setStatus('冥想中：' + progress.current + ' + ' + progress.gained + ' = ' + progress.total + '/' + targetSpirit, 'run');
+                // 每20分钟冥想进度通知
+                if (Date.now() - _lastMeditateReport > 1200000) {
+                    _lastMeditateReport = Date.now();
+                    var remainMin = spiritPerMinute > 0 ? Math.ceil((targetSpirit - progress.total) / spiritPerMinute) : '?';
+                    wecomEnqueue('🧘 冥想中', '预计收工神识：' + progress.total + '/' + targetSpirit + '\n还需约：' + remainMin + '分钟');
+                }
                 if (progress.total >= targetSpirit) break;
             } else if (spiritPerMinute > 0) {
                 var fallbackProgress = estimateMeditateProgress({}, info, spiritPerMinute, startedAt);
@@ -1242,7 +1259,6 @@
         if (!running) return false;
 
         setStatus('神识已到阈值，收功', 'run');
-        wecomEnqueue('冥想完成', '收功完成，神识已恢复到阈值 ' + targetSpirit + '/' + info.maxSpirit);
         await stopMeditationAndRefresh();
         return true;
     }
@@ -1932,7 +1948,7 @@
                 return false;
             }
             await finishCombatResult(fightRes.data, '自战');
-            // 战后检查血量，残血自动恢复
+            _cleanStats.combats++;
             await recoverAfterCombat();
             return true;
         } catch (err) {
@@ -2605,6 +2621,7 @@
             }
 
             toast('已雇佣护道：' + cheapest.name + '，' + cheapest.fee + '灵石，' + (cheapest.mode === 'alone' ? '单独' : '协同') + '。');
+            _cleanStats.combats++;
             if (typeof window.loadInventory === 'function') window.loadInventory();
             if (typeof window.loadGameLogs === 'function') window.loadGameLogs();
             await refreshPlayer();
@@ -3562,7 +3579,6 @@
         normalizeMultiplier();
         updateMeter();
         setStatus('启动中', 'run');
-        wecomEnqueue('清理开始', '神识清理 v' + SCRIPT_VERSION + ' 已启动循环清理');
         if (!await checkDaoyunBeforeStart('自动清理')) {
             running = false;
             updateMeter();
@@ -3572,9 +3588,19 @@
         await stopMeditationBeforeRun();
         if (!running) return;
         setStatus('运行中', 'run');
+        resetCleanStats();
+        var pName = (getPlayer() || {}).name || '';
+        wecomEnqueue('🧹 开始清理', '角色：' + pName);
 
         while (running) {
             await refreshPlayer();
+
+            // 每10分钟清理中通知
+            if (Date.now() - _lastCleanReport > 600000) {
+                _lastCleanReport = Date.now();
+                var ci = getSpiritInfo();
+                wecomEnqueue('🔄 清理中', '神识剩余：' + ci.spirit + '/' + ci.maxSpirit);
+            }
 
             if (await checkEventBlockers()) {
                 await sleep(state.delayMs);
@@ -3661,13 +3687,26 @@
                 continue;
             }
 
-            recordExploreDone();
+            _cleanStats.explores++;
             var jitter = Math.floor(Math.random() * 350);
             await sleep(state.delayMs + jitter);
         }
     }
     function stop(reason) {
         running = false;
+        // 清理完成统计
+        if (_cleanStats.explores > 0) {
+            var elapsed = Math.floor((Date.now() - _cleanStats.startTime) / 60000);
+            var realmNow = getPlayerRealmStr();
+            var lines = [
+                '运行时长：' + elapsed + '分钟',
+                '探索次数：' + _cleanStats.explores,
+                '遭遇妖兽：' + _cleanStats.combats + '次',
+            ];
+            if (_cleanStats.deaths > 0) lines.push('死亡次数：' + _cleanStats.deaths);
+            if (_cleanStats.startRealm) lines.push('修为变化：' + _cleanStats.startRealm + ' → ' + realmNow);
+            wecomEnqueue('✅ 清理结束', lines.join('\n'));
+        }
         wecomEnqueue('脚本停止', reason || '手动停止');
         if (loopTimer) {
             clearTimeout(loopTimer);
@@ -4653,7 +4692,7 @@
             '<label class="lvsc-check"><input id="lvscWecomNotify" type="checkbox">企业微信通知</label>' +
             '<label class="lvsc-check"><input id="lvscUpdateMuted" type="checkbox">屏蔽更新提醒</label>' +
             '<button id="lvscCheckUpdateBtn">检查云端更新</button>' +
-            '<button id="lvscReportBtn" style="height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;">发送简报</button>' +
+            '<button id="lvscTestNotifyBtn" style="height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;">测试通知</button>' +
             '</div>' +
             '<div class="lvsc-section" id="lvscWecomFields" style="display:none;">' +
             '<div class="lvsc-section-title">群机器人 Webhook</div>' +
@@ -4839,6 +4878,20 @@
         };
         document.getElementById('lvscCheckUpdateBtn').onclick = function () {
             checkCloudUpdate(true);
+        };
+        // 测试通知按钮
+        document.getElementById('lvscTestNotifyBtn').onclick = function () {
+            var pName = (getPlayer() || {}).name || '测试角色';
+            var now = new Date().toLocaleTimeString();
+            wecomEnqueue('🧹 开始清理', '角色：' + pName);
+            wecomEnqueue('🔄 清理中', '神识剩余：180/200');
+            wecomEnqueue('🧘 开始冥想', '当前神识：5/200\n目标神识：200\n预计恢复：约 8分钟后\n预计下一轮清理：' + now);
+            wecomEnqueue('🧘 冥想中', '预计收工神识：120/200\n还需约：5分钟');
+            wecomEnqueue('✨ 高级冥想', '使用前仙缘：125\n使用后仙缘：123\n神识：已恢复');
+            wecomEnqueue('💀 角色陨落', '位置：青云城\n正在尝试引渡复活...');
+            wecomEnqueue('🔄 已引渡归来', '前往：灵溪村\n将恢复 HP/MP 后继续清理');
+            wecomEnqueue('✅ 清理结束', '运行时长：120分钟\n探索次数：342\n遭遇妖兽：47次\n死亡次数：1');
+            setStatus('测试通知已发送', 'run');
         };
         document.getElementById('lvscReportBtn').onclick = function () {
             sendPeriodicReport(true);
@@ -5028,8 +5081,6 @@
         refreshPlayer();
         showBuiltinReleaseOnce();
         hookAntiCheatAutoSolve();
-        resetReportStats();
-        setInterval(function () { sendPeriodicReport(false); }, 60000);
         startOnlineHeartbeat();
         setTimeout(function () { checkCloudUpdate(false); }, 1500);
         setInterval(function () { checkCloudUpdate(false); }, CLOUD_UPDATE_POLL_MS);
