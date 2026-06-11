@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.4
+// @version      1.3.5
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.4';
+    var SCRIPT_VERSION = '1.3.5';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -118,6 +118,15 @@
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.3.5',
+            title: '铭文系统修复',
+            notes: [
+                '铭文改为纯API调用，装备从法相穿搭读取，品质下拉凡纹~天纹。',
+                '修复API字段解析（statType/quality/天纹值÷10），天纹属性名匹配（御→防御等）。',
+                '百连日志只显示最优3条，命中后停止不自动切探索。'
+            ]
+        },
         {
             version: '1.3.3',
             title: '铭文系统API重写',
