@@ -3161,13 +3161,11 @@
                             await sleep(state.inscriptionDiscardDelay);
                             continue;
                         }
-                        setStatus('铭文目标达成，自动切换为探索', 'run');
-                        wecomEnqueue('铭文命中', '铭文目标已达成，切换为探索模式');
+                        setStatus('铭文目标达成，已停止', 'run');
+                        wecomEnqueue('铭文命中', '铭文目标已达成');
                         autoInscriptionRunning = false;
                         updateInscriptionPanel();
                         updateMeter();
-                        await sleep(500);
-                        runLoop();
                         return;
                     }
                     await inscriptionApiDiscardAll();
@@ -3230,13 +3228,11 @@
                         await sleep(state.inscriptionDiscardDelay);
                         continue;
                     }
-                    // 目标达成，自动切换为探索
-                    setStatus('铭文目标达成，自动切换为探索', 'run');
+                    // 目标达成，停止
+                    setStatus('铭文目标达成，已停止', 'run');
                     autoInscriptionRunning = false;
                     updateInscriptionPanel();
                     updateMeter();
-                    await sleep(500);
-                    runLoop();
                     return;
                 }
                 if (await inscriptionApiDiscardAll()) {
