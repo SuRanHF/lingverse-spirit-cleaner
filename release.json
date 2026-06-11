@@ -1,29 +1,23 @@
 {
-  "version": "1.3.7",
-  "title": "神识清理 v1.3.7 — 自动出狱 + 自动过验证 + 铭文API",
+  "version": "1.3.9",
+  "title": "神识清理 v1.3.9 — 全新微信通知系统",
   "notes": [
-    "铭文系统改为纯API调用，装备从法相穿搭读取，品质下拉凡纹~天纹",
-    "自动出狱：每30秒检测禁闭并消耗仙缘保释",
-    "自动过反脚本算术验证：支持中文数字",
-    "一键触发验证按钮（不触发不罢休）",
-    "复活下拉从游戏地图弹窗抓取地名"
+    "微信通知全面改版：清理开始/清理中/冥想/高级冥想/死亡/复活/清理统计",
+    "每10分钟推送剩余神识，每20分钟推送冥想进度",
+    "清理结束推送完整统计（探索次数/遭遇/死亡/修为变化）",
+    "更新tab新增测试通知按钮"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.7",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.9",
   "changelog": [
     {
-      "version": "1.3.7",
-      "title": "自动出狱 + 自动过验证",
-      "notes": ["自动出狱", "验证中文数字", "一键触发验证"]
+      "version": "1.3.9",
+      "title": "全新微信通知系统",
+      "notes": ["清理/冥想/死亡/统计通知", "每10分钟清理中+每20分钟冥想中", "测试通知按钮"]
     },
     {
       "version": "1.3.5",
       "title": "铭文系统API重写",
-      "notes": ["API直调铭文", "天纹匹配修复", "日志精简"]
-    },
-    {
-      "version": "1.3.2",
-      "title": "复活下拉 + 铭文百连 + 屏蔽更新",
-      "notes": ["复活下拉抓取地图", "铭文百连", "屏蔽更新"]
+      "notes": ["API直调铭文", "天纹匹配", "装备选择"]
     },
     {
       "version": "1.3.0",
