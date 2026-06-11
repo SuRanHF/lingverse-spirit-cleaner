@@ -116,52 +116,6 @@
     var DEFAULT_ONLINE_STATS_ENDPOINT = 'http://lingshen.ccwu.cc/api/heartbeat';
     var onlineHeartbeatStarted = false;
     var autoBailRunning = false;
-    var triggerVerifyActive = false;
-
-    // 一键触发验证：不触发不罢休
-    async function triggerTestVerification() {
-        if (!gameApi()) return;
-        if (triggerVerifyActive) return;
-        triggerVerifyActive = true;
-        var stopBtn = document.getElementById('lvscStopTriggerBtn');
-        var triggerBtn = document.getElementById('lvscTriggerVerifyBtn');
-        if (stopBtn) stopBtn.style.display = '';
-        if (triggerBtn) triggerBtn.textContent = '触发中...';
-        setStatus('暴力触发验证中...', 'run');
-        // 铭文draw-ten是真正触发429的接口
-        var got429 = false;
-        var count = 0;
-        var eqId = _inscItemId;
-        if (!eqId) {
-            var selEl = document.getElementById('lvscInscriptionEquipment');
-            eqId = selEl && selEl.value ? selEl.value : '';
-        }
-        if (!eqId) { setStatus('请先在铭文tab选装备', 'warn'); triggerVerifyActive = false; return; }
-        while (triggerVerifyActive) {
-            count++;
-            var res = await gameApi().post('/api/game/inscription/draw-ten', { itemId: eqId });
-            if (res && res.code === 429) {
-                got429 = true;
-                setStatus('429触发！第' + count + '次十连，游戏弹出验证窗', 'run');
-                break;
-            }
-            if (count % 5 === 0) setStatus('暴力触发中... 第' + count + '次十连', 'run');
-            // 用 setTimeout 式轮询，让 stop 按钮能即时生效
-            await new Promise(function (r) {
-                var start = Date.now();
-                function tick() { if (!triggerVerifyActive || Date.now() - start >= 100) r(); else setTimeout(tick, 20); }
-                tick();
-            });
-        }
-        triggerVerifyActive = false;
-        if (stopBtn) stopBtn.style.display = 'none';
-        if (triggerBtn) triggerBtn.textContent = '一键触发验证';
-        if (!got429) setStatus('触发已终止', 'idle');
-    }
-    function stopTriggerVerify() {
-        triggerVerifyActive = false;
-    }
-
     // 自动出狱：检测并保释
     async function checkAndAutoBail(manual) {
         if (autoBailRunning || !gameApi()) return;
@@ -4659,7 +4613,6 @@
             '<label class="lvsc-check"><input id="lvscWecomNotify" type="checkbox">企业微信通知</label>' +
             '<label class="lvsc-check"><input id="lvscUpdateMuted" type="checkbox">屏蔽更新提醒</label>' +
             '<button id="lvscCheckUpdateBtn">检查云端更新</button>' +
-            '<div style="display:flex;gap:6px;"><button id="lvscTriggerVerifyBtn" style="flex:1;height:32px;background:rgba(255,209,102,.14);color:#ffd166;border:1px solid rgba(255,209,102,.28)!important;" title="暴力连发请求直到触发429真实验证">一键触发验证</button><button id="lvscStopTriggerBtn" style="display:none;height:32px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28)!important;">终止</button></div>' +
             '</div>' +
             '<div class="lvsc-section" id="lvscWecomFields" style="display:none;">' +
             '<div class="lvsc-section-title">群机器人 Webhook</div>' +
@@ -4845,13 +4798,6 @@
         };
         document.getElementById('lvscCheckUpdateBtn').onclick = function () {
             checkCloudUpdate(true);
-        };
-        // 触发验证按钮
-        document.getElementById('lvscTriggerVerifyBtn').onclick = function () {
-            triggerTestVerification();
-        };
-        document.getElementById('lvscStopTriggerBtn').onclick = function () {
-            stopTriggerVerify();
         };
         // 每30秒自动检查是否入狱（需开启自动出狱）
         document.getElementById('lvscAutoBail').checked = state.autoBail;
