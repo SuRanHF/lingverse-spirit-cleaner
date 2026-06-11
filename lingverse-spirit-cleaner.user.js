@@ -126,9 +126,9 @@
             if (challenge && challenge.code === 200 && challenge.data) {
                 var q = challenge.data.question || '';
                 if (typeof window.gamePrompt === 'function') {
-                    // 走被 hook 过的 gamePrompt，会自动解题
-                    window.gamePrompt(
-                        '<p>检测到操作模式异常，请完成验证后继续。</p>' +
+                    // 用原始 gamePrompt（不被自动解题拦截），让你手动看验证弹窗
+                    var promptFn = window._origGamePrompt || window.gamePrompt;
+                    promptFn(
                         '<p style="color:var(--text-muted);font-size:12px;margin-top:8px;">请输入下方算式结果，验证通过后会自动重试刚才的操作。</p>' +
                         '<div style="margin-top:10px;font-size:20px;color:var(--accent-gold);font-weight:bold;text-align:center;">' + (q || '') + '</div>',
                         '验证', function (answer) {
@@ -202,6 +202,7 @@
         // 拦截 gamePrompt，当问题是算式时自动计算答案
         var origGamePrompt = window.gamePrompt;
         if (!origGamePrompt || origGamePrompt.__lvHooked) return;
+        window._origGamePrompt = origGamePrompt; // 保存原始引用，供手动测试用
         window.gamePrompt = function (message, title, onOk, onCancel, isDestructive, inputOpts) {
             // 检测是否是反脚本验证
             if (message && message.indexOf('请输入下方算式结果') >= 0) {
