@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.0
+// @version      1.3.1
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.0';
+    var SCRIPT_VERSION = '1.3.1';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -118,6 +118,14 @@
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.3.1',
+            title: '修复复活下拉 + 道韵弹窗',
+            notes: [
+                '复活前往下拉增加延迟重试+定时轮询，解决游戏地图未加载时获取不到选项的问题。',
+                '道韵加成检查改用脚本风格自定义弹窗，不再消失或弹系统框。'
+            ]
+        },
         {
             version: '1.3.0',
             title: '操作逻辑大优化 + UI改进',
@@ -633,24 +641,61 @@
         updateMeter();
     }
 
+    // 自定义确认弹窗（和脚本面板统一风格）
+    function showConfirmModal(message, onOk, onCancel) {
+        var old = document.getElementById('lvscConfirmModal');
+        if (old) old.remove();
+        var modal = document.createElement('div');
+        modal.id = 'lvscConfirmModal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:' + (PANEL_Z_INDEX + 1) + ';display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML =
+            '<div style="position:absolute;inset:0;background:rgba(0,0,0,.55);"></div>' +
+            '<div style="position:relative;width:min(360px,calc(100vw - 28px));background:rgba(17,20,29,.98);border:1px solid rgba(219,185,112,.4);border-radius:10px;padding:20px;color:#f5f1e8;font:13px/1.5 \'Microsoft YaHei\',sans-serif;box-shadow:0 16px 48px rgba(0,0,0,.45);">' +
+            '<div style="font-size:15px;font-weight:700;color:#dbb970;margin-bottom:10px;">提示</div>' +
+            '<div style="color:#cfc6b2;margin-bottom:16px;">' + message + '</div>' +
+            '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+            '<button id="lvscConfirmCancel" style="height:32px;padding:0 16px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.12);">取消</button>' +
+            '<button id="lvscConfirmOk" style="height:32px;padding:0 16px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;background:#dbb970;color:#17141d;border:0;">继续</button>' +
+            '</div></div>';
+        document.body.appendChild(modal);
+        document.getElementById('lvscConfirmOk').onclick = function () { modal.remove(); if (onOk) onOk(); };
+        document.getElementById('lvscConfirmCancel').onclick = function () { modal.remove(); if (onCancel) onCancel(); };
+        modal.querySelector('div[style*="inset:0"]').onclick = function () { modal.remove(); if (onCancel) onCancel(); };
+    }
+
     async function checkDaoyunBeforeStart(modeLabel) {
         if (!state.checkDaoyunBoost || !gameApi()) return true;
         try {
             var res = await gameApi().get('/api/master/overview');
             if (!res || res.code !== 200 || !res.data) {
-                setStatus('道韵加成检查失败，继续执行', 'run');
-                return true;
+                setStatus('道韵加成检查失败，等待确认', 'warn');
+                return new Promise(function (resolve) {
+                    showConfirmModal('道韵加成状态读取失败，是否继续' + modeLabel + '？',
+                        function () { resolve(true); },
+                        function () { resolve(false); }
+                    );
+                });
             }
             if (res.data.exploreBoostEnabled) {
                 setStatus('道韵加成已开启', 'run');
                 return true;
             }
-            setStatus('道韵加成未开启，继续执行', 'run');
-            return true;
+            setStatus('道韵加成未开启，等待确认', 'warn');
+            return new Promise(function (resolve) {
+                showConfirmModal('道韵加成未开启，是否继续' + modeLabel + '？',
+                    function () { resolve(true); },
+                    function () { resolve(false); }
+                );
+            });
         } catch (err) {
             console.warn('[LingVerse Spirit Cleaner] daoyun boost check failed', err);
-            setStatus('道韵加成检查异常，继续执行', 'run');
-            return true;
+            setStatus('道韵加成检查异常，等待确认', 'warn');
+            return new Promise(function (resolve) {
+                showConfirmModal('道韵加成检查异常，是否继续' + modeLabel + '？',
+                    function () { resolve(true); },
+                    function () { resolve(false); }
+                );
+            });
         }
     }
 
@@ -4412,33 +4457,51 @@
         onChk('lvscAutoNatalDevour', 'autoNatalDevour');
         onNum('lvscRepairThreshold', 'repairThreshold', 0);
         // 复活后前往：从游戏 exploreArea 读下拉选项
+        var reviveAreaRetries = 0;
         function refreshReviveAreaSelect() {
             var targetSel = document.getElementById('lvscReviveExploreArea');
             if (!targetSel) return;
             var gameSel = document.getElementById('exploreArea') || document.querySelector('select[name="area"]');
             var saved = localStorage.getItem('lvSpiritCleaner.reviveExploreArea') || '';
             targetSel.innerHTML = '<option value="">（不跳转）</option>';
-            if (!gameSel) return;
+            if (!gameSel || !gameSel.options.length) {
+                // 游戏下拉还没加载出来，延迟重试
+                if (reviveAreaRetries < 12) {
+                    reviveAreaRetries++;
+                    setTimeout(refreshReviveAreaSelect, 1000);
+                }
+                return;
+            }
+            reviveAreaRetries = 0;
             for (var oi = 0; oi < gameSel.options.length; oi++) {
                 var opt = gameSel.options[oi];
-                var val = String(opt.value || '');
                 var txt = String(opt.text || '').trim();
                 if (!txt) continue;
                 targetSel.innerHTML += '<option value="' + txt + '"' + (saved === txt ? ' selected' : '') + '>' + txt + '</option>';
             }
         }
         refreshReviveAreaSelect();
-        // 监听大地图切换
+        // 监听大地图切换：用定时轮询 + change 事件兜底
         var gameAreaEl = document.getElementById('exploreArea') || document.querySelector('select[name="area"]');
         if (gameAreaEl) {
-            var origOnChange = gameAreaEl.onchange;
-            gameAreaEl.addEventListener('change', function () { setTimeout(refreshReviveAreaSelect, 500); });
-            // MutationObserver 监听 option 变化（切换大地图时 option 可能异步更新）
-            var areaObserver = new MutationObserver(function () { setTimeout(refreshReviveAreaSelect, 500); });
-            areaObserver.observe(gameAreaEl, { childList: true, subtree: true });
+            var lastAreaOptCount = gameAreaEl.options ? gameAreaEl.options.length : 0;
+            gameAreaEl.addEventListener('change', function () { setTimeout(refreshReviveAreaSelect, 600); });
+            // 定时检测 option 数量变化（大地图切换后游戏异步更新 option）
+            setInterval(function () {
+                var el = document.getElementById('exploreArea') || document.querySelector('select[name="area"]');
+                if (!el) return;
+                var cnt = el.options ? el.options.length : 0;
+                if (cnt !== lastAreaOptCount) {
+                    lastAreaOptCount = cnt;
+                    refreshReviveAreaSelect();
+                }
+            }, 2000);
         }
         // 刷新按钮
-        document.getElementById('lvscRefreshAreas').onclick = refreshReviveAreaSelect;
+        document.getElementById('lvscRefreshAreas').onclick = function () {
+            reviveAreaRetries = 0;
+            refreshReviveAreaSelect();
+        };
         // 保存选中值
         document.getElementById('lvscReviveExploreArea').onchange = function () {
             state.reviveExploreArea = this.value;

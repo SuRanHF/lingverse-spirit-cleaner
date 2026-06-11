@@ -1,18 +1,17 @@
 {
-  "version": "1.3.0",
-  "title": "神识清理 v1.3.0 — 操作逻辑大优化",
+  "version": "1.3.1",
+  "title": "神识清理 v1.3.1 — 修复复活下拉 + 道韵弹窗",
   "notes": [
-    "清理↔监测自动衔接，神识耗尽自动等恢复、满了自动继续",
-    "道韵检查不再弹系统框",
-    "复活后自动恢复HP/MP，避免连死",
-    "战斗后自动检查血量并恢复",
-    "隐秘符/虚空淬体连续失败自动关闭",
-    "藏宝图/试炼/铭文完成后自动切探索",
-    "复活后前往改为下拉框，从游戏地图动态读取",
-    "state按模块分组，onchange单字段写入，主循环去重"
+    "复活前往下拉增加延迟重试+定时轮询",
+    "道韵加成检查改用脚本风格自定义弹窗"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.0",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.1",
   "changelog": [
+    {
+      "version": "1.3.1",
+      "title": "修复复活下拉 + 道韵弹窗",
+      "notes": ["复活下拉延迟重试+定时轮询", "道韵检查自定义弹窗"]
+    },
     {
       "version": "1.3.0",
       "title": "操作逻辑大优化 + UI改进",
