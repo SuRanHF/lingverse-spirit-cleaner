@@ -16,3 +16,4 @@ publish.ps1
 一键发布.bat
 skills-lock.json
 docx_tmp/
+__pycache__/
