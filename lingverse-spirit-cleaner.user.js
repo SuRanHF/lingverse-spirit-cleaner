@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.3
+// @version      1.3.4
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.3';
+    var SCRIPT_VERSION = '1.3.4';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -2788,7 +2788,12 @@
         if (!_inscItemId || !gameApi()) return null;
         var ep = mode === 100 ? '/api/game/inscription/draw-hundred' : '/api/game/inscription/draw-ten';
         var res = await gameApi().post(ep, { itemId: _inscItemId });
-        return (res && res.code === 200 && res.data) ? res.data : null;
+        if (!res || res.code !== 200) return null;
+        // 兼容：res.data 可能是 { results: [...] } 或直接是数组
+        var d = res.data;
+        if (d && d.results) return d;
+        if (Array.isArray(d)) return { results: d };
+        return d || null;
     }
     async function inscriptionApiDiscardAll() {
         if (!_inscItemId || !gameApi()) return false;
@@ -2802,19 +2807,36 @@
     }
     function parseDrawResults(data) {
         if (!data) return [];
-        var items = data.pendingInscriptions || data.results || data.pending || [];
-        if (!Array.isArray(items)) return [];
+        // 兼容多种返回格式
+        var items = data.pendingInscriptions || data.results || data.items || data.pending || data.list || data;
+        if (!Array.isArray(items)) {
+            // 尝试 data.data 或直接遍历对象的数值属性
+            if (data.data && Array.isArray(data.data)) items = data.data;
+            else if (data.inscriptions && Array.isArray(data.inscriptions)) items = data.inscriptions;
+            else if (typeof data === 'object') {
+                // 如果 data 本身包含数字键，可能是数组伪装
+                items = [];
+                for (var k in data) { if (data.hasOwnProperty(k) && !isNaN(Number(k))) items.push(data[k]); }
+                if (!items.length) return [];
+            }
+        }
+        if (!Array.isArray(items) || !items.length) return [];
         var results = [];
         for (var di = 0; di < items.length; di++) {
             var item = items[di];
             if (!item) continue;
+            // 兼容各种字段名
+            var q = item.quality || item.rarity || item.level || item.rank || 0;
+            var s = item.stat || item.statName || item.name || item.type || '';
+            var v = Number(item.value || item.statValue || item.bonus || 0);
+            var pi = item.pendingIndex != null ? Number(item.pendingIndex) : di;
             results.push({
-                quality: item.quality || 0,
-                qualityName: inscriptionQualityName(item.quality || 0),
-                stat: item.stat || item.statName || '',
-                value: Number(item.value || 0),
-                pendingIndex: Number(item.pendingIndex || di),
-                text: inscriptionQualityName(item.quality || 0) + '·' + (item.stat || item.statName || '') + '+' + (item.value || 0)
+                quality: q,
+                qualityName: inscriptionQualityName(q),
+                stat: s,
+                value: v,
+                pendingIndex: pi,
+                text: inscriptionQualityName(q) + '·' + s + '+' + v
             });
         }
         return results;
@@ -3084,6 +3106,14 @@
             return;
         }
         syncSettingsFromUi();
+        // 兜底：如果 _inscItemId 没设置，直接从 DOM 读
+        if (!_inscItemId) {
+            var selEl = document.getElementById('lvscInscriptionEquipment');
+            if (selEl && selEl.value) {
+                _inscItemId = selEl.value;
+                _inscItemName = selEl.options[selEl.selectedIndex].textContent || '';
+            }
+        }
         if (!_inscItemId || !gameApi()) {
             setStatus('请先选择要铭文的装备', 'warn');
             return;
@@ -4523,11 +4553,10 @@
                 var items = res.data;
                 for (var ei = 0; ei < items.length; ei++) {
                     var item = items[ei];
-                    var name = item.name || item.itemName || '';
-                    var id = String(item.id || item.itemId || item.playerItemId || '');
+                    var name = item.name || item.itemName || item.equipmentName || '';
+                    var id = String(item.id || item.itemId || item.playerItemId || item.equipmentId || item.instanceId || '');
                     if (!name || !id) continue;
-                    var slot = item.slot || item.equipSlot || '';
-                    var rarity = item.rarity || item.quality || 0;
+                    var slot = item.slot || item.equipSlot || item.slotName || item.equipmentSlot || '';
                     var opt = document.createElement('option');
                     opt.value = id;
                     opt.textContent = (slot ? '[' + slot + '] ' : '') + name;
@@ -4535,6 +4564,11 @@
                     sel.appendChild(opt);
                 }
                 if (saved && !sel.value) sel.value = saved;
+                // 恢复上次选中的装备 ID
+                if (sel.value) {
+                    _inscItemId = sel.value;
+                    _inscItemName = sel.options[sel.selectedIndex].textContent || '';
+                }
             }).catch(function () {});
         }
         document.getElementById('lvscRefreshEquipment').onclick = refreshEquipmentSelect;
