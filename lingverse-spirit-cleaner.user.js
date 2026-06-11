@@ -2765,9 +2765,15 @@
         return result.indexOf(target) >= 0 || target.indexOf(result) >= 0;
     }
 
+    var INSC_STAT_NAMES = { attack: '攻击', defense: '防御', hp: '气血', spirit: '神识' };
+    var INSC_HEAVEN_STAT_NAMES = { attack: '锋', defense: '御', hp: '命', spirit: '灵' };
     function inscriptionQualityName(q) {
         var map = { 1: '凡纹', 2: '灵纹', 3: '宝纹', 4: '仙纹', 5: '神纹', 6: '圣纹', 7: '天纹' };
         return map[Number(q)] || '凡纹';
+    }
+    function inscriptionStatName(statType, quality) {
+        if (Number(quality) === 7) return INSC_HEAVEN_STAT_NAMES[statType] || '纹';
+        return INSC_STAT_NAMES[statType] || '属性';
     }
     function parseInscMinValue(raw) {
         raw = String(raw || '').trim();
@@ -2822,14 +2828,20 @@
             if (!item) continue;
             var qNum = Number(item.quality || 0);
             var qName = inscriptionQualityName(qNum);
+            var st = item.statType || item.stat || item.statName || '';
+            var sName = inscriptionStatName(st, qNum);
+            // 天纹 value 是百分比（如 45 = 45%），普通是数值
+            var val = Number(item.value || 0);
+            var valText = qNum === 7 ? '+' + val + '%' : '+' + val;
             results.push({
-                quality: qName,           // 用文字名（天纹/仙纹等），匹配 inscriptionQualityOk
-                qualityNum: qNum,         // 保留数字备用
+                quality: qName,
+                qualityNum: qNum,
                 qualityName: qName,
-                stat: item.stat || item.statName || '',
-                value: Number(item.value || 0),
+                stat: sName,             // 中文属性名（攻击/防御/气血/神识）
+                statKey: st,             // 原始英文 key（attack/defense/hp/spirit）
+                value: val,
                 pendingIndex: item.pendingIndex != null ? Number(item.pendingIndex) : di,
-                text: qName + '·' + (item.stat || item.statName || '') + '+' + (item.value || 0)
+                text: qName + '·' + sName + valText
             });
         }
         return results;
