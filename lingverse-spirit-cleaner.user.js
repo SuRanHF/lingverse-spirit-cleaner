@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.2
+// @version      1.3.3
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.2';
+    var SCRIPT_VERSION = '1.3.3';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -118,6 +118,16 @@
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.3.3',
+            title: '铭文系统API重写',
+            notes: [
+                '铭文改为纯API调用（draw-ten/draw-hundred/discard-all/apply），不需打开游戏弹窗。',
+                '装备选择改为从法相穿搭（equipment/current）读取已穿装备。',
+                '品质改为下拉选择：凡纹~天纹(7级)。',
+                '最小数值支持百分比输入（如 80%）。'
+            ]
+        },
         {
             version: '1.3.2',
             title: '复活下拉修复 + 铭文百连 + 屏蔽更新',
@@ -309,7 +319,7 @@
         inscriptionTargets: localStorage.getItem('lvSpiritCleaner.inscriptionTargets') || '攻击:50,防御:50,气血:100,神识:20',
         inscriptionQuality: localStorage.getItem('lvSpiritCleaner.inscriptionQuality') || 'any',
         inscriptionStat: localStorage.getItem('lvSpiritCleaner.inscriptionStat') || '攻击',
-        inscriptionMinValue: readNumber('lvSpiritCleaner.inscriptionMinValue', 50),
+        inscriptionMinValue: parseInscMinValue(localStorage.getItem('lvSpiritCleaner.inscriptionMinValue') || '50'),
         inscriptionStopMode: localStorage.getItem('lvSpiritCleaner.inscriptionStopMode') || 'any',
         inscriptionAutoEquip: localStorage.getItem('lvSpiritCleaner.inscriptionAutoEquip') === '1',
         inscriptionMaxAttempts: readNumber('lvSpiritCleaner.inscriptionMaxAttempts', 0),
@@ -595,7 +605,7 @@
         var iQual = str('lvscInscriptionQuality', 'any');
         state.inscriptionQuality = (!iQual || iQual === '不限') ? 'any' : iQual;
         state.inscriptionStat = sel('lvscInscriptionStat', '攻击', ['攻击', '防御', '气血', '神识']);
-        state.inscriptionMinValue = num('lvscInscriptionMinValue', 0, 0);
+        state.inscriptionMinValue = parseInscMinValue(str('lvscInscriptionMinValue', '0'));
         state.inscriptionTargets = state.inscriptionStat + ':' + state.inscriptionMinValue;
         state.inscriptionStopMode = sel('lvscInscriptionStopMode', 'any', ['any', 'all', 'manual']);
         state.inscriptionAutoEquip = chk('lvscInscriptionAutoEquip');
@@ -2755,6 +2765,61 @@
         return result.indexOf(target) >= 0 || target.indexOf(result) >= 0;
     }
 
+    function inscriptionQualityName(q) {
+        var map = { 1: '凡纹', 2: '灵纹', 3: '宝纹', 4: '仙纹', 5: '神纹', 6: '圣纹', 7: '天纹' };
+        return map[Number(q)] || '凡纹';
+    }
+    function parseInscMinValue(raw) {
+        raw = String(raw || '').trim();
+        if (!raw) return 0;
+        if (/%$/.test(raw)) return parseFloat(raw) || 0; // 保留百分比数值，如 "80%" → 80
+        return Math.max(0, Number(raw) || 0);
+    }
+
+    // API 直调铭文（不再点按钮，也支持未打开铭文弹窗时后台运行）
+    var _inscItemId = '';
+    var _inscItemName = '';
+    async function fetchInscriptionInfo() {
+        if (!_inscItemId || !gameApi()) return null;
+        var res = await gameApi().get('/api/game/inscription/info?itemId=' + _inscItemId);
+        return (res && res.code === 200 && res.data) ? res.data : null;
+    }
+    async function inscriptionApiDraw(mode) {
+        if (!_inscItemId || !gameApi()) return null;
+        var ep = mode === 100 ? '/api/game/inscription/draw-hundred' : '/api/game/inscription/draw-ten';
+        var res = await gameApi().post(ep, { itemId: _inscItemId });
+        return (res && res.code === 200 && res.data) ? res.data : null;
+    }
+    async function inscriptionApiDiscardAll() {
+        if (!_inscItemId || !gameApi()) return false;
+        var res = await gameApi().post('/api/game/inscription/discard-all', { itemId: _inscItemId });
+        return !!(res && res.code === 200);
+    }
+    async function inscriptionApiApply(pendingIndex, slotIndex) {
+        if (!_inscItemId || !gameApi()) return false;
+        var res = await gameApi().post('/api/game/inscription/apply', { itemId: _inscItemId, pendingIndex: pendingIndex, slotIndex: slotIndex });
+        return !!(res && res.code === 200);
+    }
+    function parseDrawResults(data) {
+        if (!data) return [];
+        var items = data.pendingInscriptions || data.results || data.pending || [];
+        if (!Array.isArray(items)) return [];
+        var results = [];
+        for (var di = 0; di < items.length; di++) {
+            var item = items[di];
+            if (!item) continue;
+            results.push({
+                quality: item.quality || 0,
+                qualityName: inscriptionQualityName(item.quality || 0),
+                stat: item.stat || item.statName || '',
+                value: Number(item.value || 0),
+                pendingIndex: Number(item.pendingIndex || di),
+                text: inscriptionQualityName(item.quality || 0) + '·' + (item.stat || item.statName || '') + '+' + (item.value || 0)
+            });
+        }
+        return results;
+    }
+
     function parseInscriptionTargets() {
         if (state.inscriptionStat) {
             return [{
@@ -3019,21 +3084,36 @@
             return;
         }
         syncSettingsFromUi();
+        if (!_inscItemId || !gameApi()) {
+            setStatus('请先选择要铭文的装备', 'warn');
+            return;
+        }
         inscriptionStats = { total: 0, kept: 0, discarded: 0, best: '' };
         autoInscriptionRunning = true;
-        var targetHeld = false;
-        inscriptionLog('开始铭文洗练：' + (state.inscriptionQuality === 'any' ? '不限等级' : state.inscriptionQuality + '及以上') + ' / ' + state.inscriptionStat + ' ≥ ' + state.inscriptionMinValue);
+        inscriptionLog('开始铭文洗练：' + (state.inscriptionQuality === 'any' ? '不限等级' : state.inscriptionQuality + '及以上') + ' / ' + state.inscriptionStat + ' ≥ ' + state.inscriptionMinValue + ' / 装备 ' + (_inscItemName || _inscItemId));
         updateInscriptionPanel();
         while (autoInscriptionRunning) {
             try {
-                var existingResults = parseInscriptionResultCards();
-                if (existingResults.length) {
+                // 先用 API 拉取当前 pending 结果
+                var info = await fetchInscriptionInfo();
+                if (info && info.pendingInscriptions && info.pendingInscriptions.length) {
+                    var existingResults = parseDrawResults({ pendingInscriptions: info.pendingInscriptions });
                     var existingDecision = inscriptionTargetDecision(existingResults);
                     if (existingDecision.met) {
-                        if (state.inscriptionAutoEquip && await autoEquipInscriptionResults(existingDecision.matches)) {
+                        if (state.inscriptionAutoEquip) {
+                            var slots = info.inscriptions || info.slots || [];
+                            for (var mi = 0; mi < existingDecision.matches.length; mi++) {
+                                var match = existingDecision.matches[mi];
+                                for (var si = 0; si < slots.length; si++) {
+                                    if (!slots[si] || slots[si].quality <= 0) continue;
+                                    if (String(slots[si].stat || '').indexOf(match.target.stat) < 0) continue;
+                                    await inscriptionApiApply(match.result.pendingIndex, si);
+                                    break;
+                                }
+                            }
                             inscriptionStats.kept += 1;
                             updateInscriptionPanel();
-                            await clickInscriptionDiscardAll();
+                            await inscriptionApiDiscardAll();
                             await sleep(state.inscriptionDiscardDelay);
                             continue;
                         }
@@ -3046,12 +3126,7 @@
                         runLoop();
                         return;
                     }
-                    if (!await clickInscriptionDiscardAll()) {
-                        inscriptionLog('已有未命中结果但放弃失败，等待重试');
-                        setStatus('放弃已有铭文结果失败，等待重试', 'warn');
-                        await sleep(Math.max(state.inscriptionDiscardDelay, 2000));
-                        continue;
-                    }
+                    await inscriptionApiDiscardAll();
                     inscriptionStats.discarded += 1;
                     updateInscriptionPanel();
                     await sleep(state.inscriptionDiscardDelay);
@@ -3063,18 +3138,19 @@
                     await sleep(Math.max(state.inscriptionResultDelay, 2000));
                     continue;
                 }
-                if (!await clickInscriptionPull(state.inscriptionPullMode)) {
+                // API 直调抽铭文
+                var drawData = await inscriptionApiDraw(state.inscriptionPullMode);
+                if (!drawData) {
                     var modeLabel = state.inscriptionPullMode === 100 ? '百连' : '十连';
-                    inscriptionLog('未找到”' + modeLabel + '灵纹”按钮，等待重试');
-                    setStatus('未找到' + modeLabel + '按钮，等待重试', 'warn');
+                    inscriptionLog('铭文' + modeLabel + 'API 失败，等待重试');
+                    setStatus('铭文' + modeLabel + ' API 失败，等待重试', 'warn');
                     await sleep(Math.max(state.inscriptionResultDelay, 2000));
                     continue;
                 }
                 inscriptionStats.total += 1;
-                targetHeld = false;
                 updateInscriptionPanel();
-                await sleep(state.inscriptionResultDelay);
-                var results = await waitInscriptionResults(5000);
+                // API 返回结果直接在 drawData 里
+                var results = parseDrawResults(drawData);
                 if (!results.length) {
                     inscriptionLog('第' + inscriptionStats.total + ' 次没有解析到结果，等待重试');
                     setStatus('铭文结果为空，等待重试', 'warn');
@@ -3088,10 +3164,20 @@
                 if (decision.met) {
                     inscriptionStats.kept += 1;
                     updateInscriptionPanel();
-                    setStatus('铭文目标达成，已保留结果等待处理', 'run');
                     wecomEnqueue('铭文命中', '第' + inscriptionStats.total + '次 | ' + results.map(function (item) { return item.text; }).join('，'));
-                    if (state.inscriptionAutoEquip && await autoEquipInscriptionResults(decision.matches)) {
-                        await clickInscriptionDiscardAll();
+                    if (state.inscriptionAutoEquip) {
+                        var info2 = await fetchInscriptionInfo();
+                        var slots2 = (info2 && (info2.inscriptions || info2.slots)) || [];
+                        for (var mi = 0; mi < decision.matches.length; mi++) {
+                            var match2 = decision.matches[mi];
+                            for (var si2 = 0; si2 < slots2.length; si2++) {
+                                if (!slots2[si2] || slots2[si2].quality <= 0) continue;
+                                if (String(slots2[si2].stat || '').indexOf(match2.target.stat) < 0) continue;
+                                await inscriptionApiApply(match2.result.pendingIndex, si2);
+                                break;
+                            }
+                        }
+                        await inscriptionApiDiscardAll();
                         await sleep(state.inscriptionDiscardDelay);
                         continue;
                     }
@@ -3104,7 +3190,7 @@
                     runLoop();
                     return;
                 }
-                if (await clickInscriptionDiscardAll()) {
+                if (await inscriptionApiDiscardAll()) {
                     inscriptionStats.discarded += 1;
                     updateInscriptionPanel();
                     await sleep(state.inscriptionDiscardDelay);
@@ -4341,11 +4427,12 @@
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="inscription">' +
             '<div class="lvsc-category-title">铭文洗练</div>' +
             '<div class="lvsc-section">' +
+            '<label>铭文装备<select id="lvscInscriptionEquipment"><option value="">点击刷新选择装备</option></select><button id="lvscRefreshEquipment" style="height:29px;padding:0 8px;margin-left:4px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;font-size:11px;">刷新</button></label>' +
             '<div id="lvscInscriptionStats">次数 0 / 达成 0 / 放弃 0</div>' +
             '<div class="lvsc-grid2">' +
-            '<label>等级关键词<input id="lvscInscriptionQuality" type="text" placeholder="不限，或填页面显示的等级"></label>' +
+            '<label>最低品质<select id="lvscInscriptionQuality"><option value="any">不限</option><option value="凡纹">凡纹</option><option value="灵纹">灵纹</option><option value="宝纹">宝纹</option><option value="仙纹">仙纹</option><option value="神纹">神纹</option><option value="圣纹">圣纹</option><option value="天纹">天纹</option></select></label>' +
             '<label>目标属性<select id="lvscInscriptionStat"><option value="攻击">攻击</option><option value="防御">防御</option><option value="气血">气血</option><option value="神识">神识</option></select></label>' +
-            '<label>最小数值<input id="lvscInscriptionMinValue" type="number" min="0" step="1"></label>' +
+            '<label>最小数值<input id="lvscInscriptionMinValue" type="text" placeholder="如 50 或 80%"></label>' +
             '<label>命中模式<select id="lvscInscriptionStopMode"><option value="any">任一满足即保留</option><option value="all">全部满足才保留</option><option value="manual">只手动停止</option></select></label>' +
             '<label class="lvsc-check"><input id="lvscInscriptionAutoEquip" type="checkbox">命中后自动装配</label>' +
             '<label>最大次数<input id="lvscInscriptionMaxAttempts" type="number" min="0" step="1" title="填 0 表示无限"></label>' +
@@ -4424,9 +4511,43 @@
         document.getElementById('lvscAutoReviveDeath').checked = state.autoReviveDeath;
         document.getElementById('lvscCheckDaoyunBoost').checked = state.checkDaoyunBoost;
         document.getElementById('lvscUseAdvancedMeditate').checked = state.useAdvancedMeditate;
+        // 铭文装备下拉：从法相穿搭（已装备）读取
+        function refreshEquipmentSelect() {
+            var sel = document.getElementById('lvscInscriptionEquipment');
+            if (!sel) return;
+            var saved = _inscItemId || localStorage.getItem('lvSpiritCleaner.inscriptionEquipmentId') || '';
+            sel.innerHTML = '<option value="">点击刷新选择装备</option>';
+            if (!gameApi()) return;
+            gameApi().get('/api/game/equipment/current').then(function (res) {
+                if (!res || res.code !== 200 || !Array.isArray(res.data)) return;
+                var items = res.data;
+                for (var ei = 0; ei < items.length; ei++) {
+                    var item = items[ei];
+                    var name = item.name || item.itemName || '';
+                    var id = String(item.id || item.itemId || item.playerItemId || '');
+                    if (!name || !id) continue;
+                    var slot = item.slot || item.equipSlot || '';
+                    var rarity = item.rarity || item.quality || 0;
+                    var opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = (slot ? '[' + slot + '] ' : '') + name;
+                    if (id === saved) opt.selected = true;
+                    sel.appendChild(opt);
+                }
+                if (saved && !sel.value) sel.value = saved;
+            }).catch(function () {});
+        }
+        document.getElementById('lvscRefreshEquipment').onclick = refreshEquipmentSelect;
+        document.getElementById('lvscInscriptionEquipment').onchange = function () {
+            _inscItemId = this.value;
+            _inscItemName = this.options[this.selectedIndex].textContent || '';
+            localStorage.setItem('lvSpiritCleaner.inscriptionEquipmentId', _inscItemId);
+            state.inscriptionQuality = 'any'; // 重置为不限，让用户选择纹纹等级
+        };
+        setTimeout(refreshEquipmentSelect, 1500);
         document.getElementById('lvscInscriptionQuality').value = String(state.inscriptionQuality);
         document.getElementById('lvscInscriptionStat').value = String(state.inscriptionStat);
-        document.getElementById('lvscInscriptionMinValue').value = String(state.inscriptionMinValue);
+        document.getElementById('lvscInscriptionMinValue').value = localStorage.getItem('lvSpiritCleaner.inscriptionMinValue') || '50';
         document.getElementById('lvscInscriptionStopMode').value = String(state.inscriptionStopMode);
         document.getElementById('lvscInscriptionAutoEquip').checked = state.inscriptionAutoEquip;
         document.getElementById('lvscInscriptionMaxAttempts').value = String(state.inscriptionMaxAttempts);
@@ -4623,7 +4744,7 @@
         onChk('lvscAutoReviveDeath', 'autoReviveDeath');
         onChk('lvscCheckDaoyunBoost', 'checkDaoyunBoost');
         onChk('lvscUseAdvancedMeditate', 'useAdvancedMeditate');
-        onSel('lvscInscriptionQuality', 'inscriptionQuality', ['any', 'common', 'uncommon', 'rare', 'epic', 'legend', '普通', '优良', '稀有', '史诗', '传说']);
+        onSel('lvscInscriptionQuality', 'inscriptionQuality', ['any', '凡纹', '灵纹', '宝纹', '仙纹', '神纹', '圣纹', '天纹']);
         // 铭文属性和最小值变化时需要同步 targets
         document.getElementById('lvscInscriptionStat').onchange = function () {
             state.inscriptionStat = strVal('lvscInscriptionStat');
@@ -4632,9 +4753,10 @@
             persistSetting('lvSpiritCleaner.inscriptionTargets', state.inscriptionTargets);
         };
         document.getElementById('lvscInscriptionMinValue').onchange = function () {
-            state.inscriptionMinValue = Math.max(0, numVal('lvscInscriptionMinValue'));
-            state.inscriptionTargets = state.inscriptionStat + ':' + state.inscriptionMinValue;
-            persistSetting('lvSpiritCleaner.inscriptionMinValue', String(state.inscriptionMinValue));
+            var raw = strVal('lvscInscriptionMinValue');
+            state.inscriptionMinValue = parseInscMinValue(raw);
+            state.inscriptionTargets = state.inscriptionStat + ':' + raw;
+            persistSetting('lvSpiritCleaner.inscriptionMinValue', raw);
             persistSetting('lvSpiritCleaner.inscriptionTargets', state.inscriptionTargets);
         };
         onSel('lvscInscriptionStopMode', 'inscriptionStopMode', ['any', 'all', 'manual']);

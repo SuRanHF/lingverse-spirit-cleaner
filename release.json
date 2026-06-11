@@ -1,13 +1,19 @@
 {
-  "version": "1.3.2",
-  "title": "神识清理 v1.3.2 — 复活下拉 + 铭文百连 + 屏蔽更新",
+  "version": "1.3.3",
+  "title": "神识清理 v1.3.3 — 铭文系统API重写",
   "notes": [
-    "复活前往下拉从游戏地图弹窗抓取地名，死亡后API自动跳转",
-    "铭文洗练新增百连模式",
-    "更新tab新增屏蔽更新提醒"
+    "铭文改为纯API调用，不需打开游戏弹窗",
+    "装备选择从法相穿搭读取已穿装备",
+    "品质下拉：凡纹~天纹(7级)",
+    "最小数值支持百分比输入"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.2",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.3.3",
   "changelog": [
+    {
+      "version": "1.3.3",
+      "title": "铭文API重写",
+      "notes": ["API直调铭文", "法相穿搭装备选择", "凡纹~天纹品质", "百分比数值"]
+    },
     {
       "version": "1.3.2",
       "title": "复活下拉 + 铭文百连 + 屏蔽更新",
@@ -16,17 +22,12 @@
     {
       "version": "1.3.1",
       "title": "修复复活下拉 + 道韵弹窗",
-      "notes": ["复活下拉延迟重试+定时轮询", "道韵检查自定义弹窗"]
+      "notes": ["复活下拉延迟重试", "道韵自定义弹窗"]
     },
     {
       "version": "1.3.0",
       "title": "操作逻辑大优化",
-      "notes": ["清理↔监测衔接", "复活后恢复", "战斗后查血", "buff自动关闭", "各模式自动切探索"]
-    },
-    {
-      "version": "1.2.9",
-      "title": "本命吞噬修复2",
-      "notes": ["去掉hasBonus检查"]
+      "notes": ["清理↔监测衔接", "复活后恢复", "战斗后查血", "自动切探索"]
     }
   ]
 }
