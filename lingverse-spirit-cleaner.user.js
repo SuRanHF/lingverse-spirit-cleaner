@@ -117,6 +117,39 @@
     var onlineHeartbeatStarted = false;
     var autoBailRunning = false;
 
+    // 主动触发人机验证（测试用）
+    async function triggerTestVerification() {
+        if (!gameApi()) return;
+        setStatus('主动触发人机验证...', 'run');
+        try {
+            var challenge = await gameApi().get('/api/game/anti-cheat/verify-challenge');
+            if (challenge && challenge.code === 200 && challenge.data) {
+                var q = challenge.data.question || '';
+                if (typeof window.gamePrompt === 'function') {
+                    // 走被 hook 过的 gamePrompt，会自动解题
+                    window.gamePrompt(
+                        '<p>检测到操作模式异常，请完成验证后继续。</p>' +
+                        '<p style="color:var(--text-muted);font-size:12px;margin-top:8px;">请输入下方算式结果，验证通过后会自动重试刚才的操作。</p>' +
+                        '<div style="margin-top:10px;font-size:20px;color:var(--accent-gold);font-weight:bold;text-align:center;">' + (q || '') + '</div>',
+                        '验证', function (answer) {
+                            // 自动解题已填入，提交验证
+                            gameApi().post('/api/game/anti-cheat/verify', { token: challenge.data.token, answer: parseFloat(answer) || answer }).then(function (v) {
+                                setStatus(v && v.code === 200 ? '验证通过' : '验证失败', v && v.code === 200 ? 'run' : 'warn');
+                            });
+                        }, function () { setStatus('验证取消', 'warn'); }, true,
+                        { type: 'text', inputmode: 'decimal', placeholder: '输入结果' }
+                    );
+                } else {
+                    setStatus('验证题已获取但gamePrompt不可用', 'warn');
+                }
+            } else {
+                setStatus('暂无验证需求', 'run');
+            }
+        } catch (err) {
+            setStatus('触发验证失败: ' + (err.message || ''), 'warn');
+        }
+    }
+
     // 自动出狱：检测并保释
     async function checkAndAutoBail(manual) {
         if (autoBailRunning || !gameApi()) return;
@@ -4797,6 +4830,11 @@
         // 出狱/验证按钮
         document.getElementById('lvscAutoBailBtn').onclick = function () {
             checkAndAutoBail(true);
+        };
+        // 右键或长按触发人机验证测试
+        document.getElementById('lvscAutoBailBtn').oncontextmenu = function (e) {
+            e.preventDefault();
+            triggerTestVerification();
         };
         // 每30秒自动检查是否入狱
         setInterval(function () { checkAndAutoBail(false); }, 30000);
