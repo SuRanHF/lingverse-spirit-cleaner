@@ -2788,12 +2788,25 @@
         if (!_inscItemId || !gameApi()) return null;
         var ep = mode === 100 ? '/api/game/inscription/draw-hundred' : '/api/game/inscription/draw-ten';
         var res = await gameApi().post(ep, { itemId: _inscItemId });
+        // DEBUG: 打印 API 返回格式（看过后可删）
+        console.log('[铭文API] draw ' + mode, JSON.stringify(res).substring(0, 500));
         if (!res || res.code !== 200) return null;
-        // 兼容：res.data 可能是 { results: [...] } 或直接是数组
         var d = res.data;
         if (d && d.results) return d;
         if (Array.isArray(d)) return { results: d };
         return d || null;
+    }
+    async function inscriptionApiDiscardAll() {
+        if (!_inscItemId || !gameApi()) return false;
+        var res = await gameApi().post('/api/game/inscription/discard-all', { itemId: _inscItemId });
+        console.log('[铭文API] discard-all', JSON.stringify(res).substring(0, 300));
+        return !!(res && res.code === 200);
+    }
+    async function inscriptionApiApply(pendingIndex, slotIndex) {
+        if (!_inscItemId || !gameApi()) return false;
+        var res = await gameApi().post('/api/game/inscription/apply', { itemId: _inscItemId, pendingIndex: pendingIndex, slotIndex: slotIndex });
+        console.log('[铭文API] apply', JSON.stringify(res).substring(0, 300));
+        return !!(res && res.code === 200);
     }
     async function inscriptionApiDiscardAll() {
         if (!_inscItemId || !gameApi()) return false;
@@ -4549,6 +4562,7 @@
             sel.innerHTML = '<option value="">点击刷新选择装备</option>';
             if (!gameApi()) return;
             gameApi().get('/api/game/equipment/current').then(function (res) {
+                console.log('[铭文API] equipment/current', JSON.stringify(res).substring(0, 1000));
                 if (!res || res.code !== 200 || !Array.isArray(res.data)) return;
                 var items = res.data;
                 for (var ei = 0; ei < items.length; ei++) {
