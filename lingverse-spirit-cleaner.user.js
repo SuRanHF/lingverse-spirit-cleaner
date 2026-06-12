@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.3.9
+// @version      1.4.0
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -106,7 +106,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.3.9';
+    var SCRIPT_VERSION = '1.4.0';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -237,6 +237,11 @@
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
         {
+            version: '1.4.0',
+            title: '铭文装配重做 + 地图修复',
+            notes: ['铭文自动装配改为API操作，策略：空槽→同属低品→同属同品低值。', '新增复选框：允许跨属性覆盖、跳过神识铭文。', '复活下拉过滤渡劫/传送等非地图节点。', '微信通知系统、自动出狱、自动过验证。']
+        },
+        {
             version: '1.3.9',
             title: '全新微信通知系统',
             notes: ['清理开始/清理中(10min)/冥想/高级冥想/死亡/复活/清理统计通知', '每10分钟推送剩余神识，每20分钟推送冥想进度']
@@ -324,6 +329,8 @@
         inscriptionMinValue: parseInscMinValue(localStorage.getItem('lvSpiritCleaner.inscriptionMinValue') || '50'),
         inscriptionStopMode: localStorage.getItem('lvSpiritCleaner.inscriptionStopMode') || 'any',
         inscriptionAutoEquip: localStorage.getItem('lvSpiritCleaner.inscriptionAutoEquip') === '1',
+        inscriptionEquipCrossStat: localStorage.getItem('lvSpiritCleaner.inscriptionEquipCrossStat') === '1',
+        inscriptionEquipSkipSpirit: localStorage.getItem('lvSpiritCleaner.inscriptionEquipSkipSpirit') === '1',
         inscriptionMaxAttempts: readNumber('lvSpiritCleaner.inscriptionMaxAttempts', 0),
         inscriptionResultDelay: readNumber('lvSpiritCleaner.inscriptionResultDelay', 1500),
         inscriptionDiscardDelay: readNumber('lvSpiritCleaner.inscriptionDiscardDelay', 600),
@@ -3013,31 +3020,43 @@
     }
 
     async function autoEquipInscriptionResults(matches) {
-        if (!state.inscriptionAutoEquip) return false;
-        var sorted = (matches || []).slice().sort(function (a, b) {
-            return Number((b.result || {}).value || 0) - Number((a.result || {}).value || 0);
-        });
+        if (!state.inscriptionAutoEquip || !_inscItemId || !gameApi()) return false;
+        var info = await fetchInscriptionInfo();
+        if (!info) { inscriptionLog('装配失败：无法获取铭文信息'); return false; }
+        var slots = info.inscriptions || info.slots || [];
         var equipped = 0;
-        for (var i = 0; i < sorted.length && autoInscriptionRunning; i++) {
-            var result = sorted[i].result;
+        var cross = state.inscriptionEquipCrossStat;
+        var skipSpirit = state.inscriptionEquipSkipSpirit;
+        var sorted = (matches || []).slice().sort(function (a, b) { return Number((b.result || {}).value || 0) - Number((a.result || {}).value || 0); });
+        function slotVal(s) { var v = Number(s.value || 0); var q = Number(s.quality || 0); return q === 7 ? v / 10 : v; }
+        function slotValText(s) { var q = Number(s.quality || 0); var v = slotVal(s); return q === 7 ? v.toFixed(1) + '%' : '+' + v; }
+        function slotStatNorm(s) { var q = Number(s.quality || 0); return normalizeStatForMatch(inscriptionStatName(s.statType || s.stat, q)); }
+        var slotDebug = slots.map(function(s, i) { var q = s && s.quality || 0; return '#' + (i + 1) + ':' + (q > 0 ? inscriptionQualityName(q) + '·' + inscriptionStatName(s.statType || s.stat, q) + slotValText(s) : '空'); }).join(' ');
+        inscriptionLog('槽位: ' + (slotDebug || '无') + (cross ? ' 跨属性' : '') + (skipSpirit ? ' 跳神识' : ''));
+        for (var mi = 0; mi < sorted.length && autoInscriptionRunning; mi++) {
+            var result = sorted[mi].result;
+            var target = sorted[mi].target;
             if (!result) continue;
-            inscriptionLog('自动装配：准备处理 ' + inscriptionResultLabel(result));
-            await clickInscriptionDetailButton(result);
-            await sleep(600);
-            var choice = chooseInscriptionSlotButton(result.value);
-            if (!choice) {
-                inscriptionLog('自动装配：跳过 ' + inscriptionResultLabel(result) + '，没有空槽或更低值槽位');
-                continue;
+            if (skipSpirit && (result.statKey === 'spirit' || target.stat === '神识')) { inscriptionLog('装配跳过(神识): ' + result.text); continue; }
+            var bestSlot = -1, bestReason = '';
+            var qNum = result.qualityNum || 0;
+            // 1. 空槽位
+            for (var s1 = 0; s1 < slots.length; s1++) { if (!slots[s1] || (slots[s1].quality || 0) <= 0) { bestSlot = s1; bestReason = '空槽' + (s1 + 1); break; } }
+            // 2. 同属性低品质
+            if (bestSlot < 0) { var loQ = Infinity; for (var s2 = 0; s2 < slots.length; s2++) { if (!slots[s2] || (slots[s2].quality || 0) <= 0) continue; var q2 = Number(slots[s2].quality || 0); if (q2 >= qNum) continue; if (slotStatNorm(slots[s2]).indexOf(target.stat) < 0) continue; if (q2 < loQ) { bestSlot = s2; loQ = q2; bestReason = '替同属低品' + (s2 + 1); } } }
+            // 3. 同属性同品质低数值
+            if (bestSlot < 0) { var loV = Infinity; for (var s3 = 0; s3 < slots.length; s3++) { if (!slots[s3] || (slots[s3].quality || 0) <= 0) continue; var q3 = Number(slots[s3].quality || 0); if (q3 !== qNum) continue; if (slotStatNorm(slots[s3]).indexOf(target.stat) < 0) continue; var sv3 = slotVal(slots[s3]); if (sv3 < result.value && sv3 < loV) { bestSlot = s3; loV = sv3; bestReason = '替同属同品低值' + (s3 + 1) + '(旧' + slotValText(slots[s3]) + ')'; } } }
+            // 跨属性
+            if (cross) {
+                if (bestSlot < 0) { var loQD = Infinity; for (var s4 = 0; s4 < slots.length; s4++) { if (!slots[s4] || (slots[s4].quality || 0) <= 0) continue; var q4 = Number(slots[s4].quality || 0); if (q4 >= qNum) continue; if (slotStatNorm(slots[s4]).indexOf(target.stat) >= 0) continue; if (q4 < loQD) { bestSlot = s4; loQD = q4; bestReason = '替异属低品' + (s4 + 1); } } }
+                if (bestSlot < 0) { var loVD = Infinity; for (var s5 = 0; s5 < slots.length; s5++) { if (!slots[s5] || (slots[s5].quality || 0) <= 0) continue; var q5 = Number(slots[s5].quality || 0); if (q5 !== qNum) continue; if (slotStatNorm(slots[s5]).indexOf(target.stat) >= 0) continue; var sv5 = slotVal(slots[s5]); if (sv5 < result.value && sv5 < loVD) { bestSlot = s5; loVD = sv5; bestReason = '替异属同品低值' + (s5 + 1) + '(旧' + slotValText(slots[s5]) + ')'; } } }
             }
-            inscriptionLog('自动装配：' + inscriptionResultLabel(result) + ' -> ' + choice.reason);
-            await humanClick(choice.button);
-            await sleep(300);
-            var confirmBtn = document.getElementById('gameDialogConfirmBtn') || visibleButtonByText(document, '确定') || visibleButtonByText(document, '确认');
-            if (confirmBtn) await humanClick(confirmBtn);
-            equipped += 1;
-            await sleep(900);
+            if (bestSlot < 0) { inscriptionLog('装配跳过: ' + result.text); continue; }
+            inscriptionLog('装配: ' + result.text + ' → ' + bestReason);
+            var ok = await inscriptionApiApply(result.pendingIndex, bestSlot);
+            if (ok) { equipped++; await sleep(300); info = await fetchInscriptionInfo(); slots = (info && (info.inscriptions || info.slots)) || []; }
         }
-        if (equipped) inscriptionLog('自动装配完成：' + equipped + ' 个');
+        if (equipped > 0) inscriptionLog('装配完成: ' + equipped + ' 个');
         return equipped > 0;
     }
 
@@ -3169,23 +3188,15 @@
                     var existingResults = parseDrawResults({ inscriptions: info.pendingInscriptions });
                     var existingDecision = inscriptionTargetDecision(existingResults);
                     if (existingDecision.met) {
-                        if (state.inscriptionAutoEquip) {
-                            var slots = info.inscriptions || info.slots || [];
-                            for (var mi = 0; mi < existingDecision.matches.length; mi++) {
-                                var match = existingDecision.matches[mi];
-                                for (var si = 0; si < slots.length; si++) {
-                                    if (!slots[si] || slots[si].quality <= 0) continue;
-                                    if (String(slots[si].stat || '').indexOf(match.target.stat) < 0) continue;
-                                    await inscriptionApiApply(match.result.pendingIndex, si);
-                                    break;
-                                }
-                            }
+                        inscriptionLog('已有' + existingResults.length + '条结果命中目标，尝试自动装配...');
+                        if (state.inscriptionAutoEquip && await autoEquipInscriptionResults(existingDecision.matches)) {
                             inscriptionStats.kept += 1;
                             updateInscriptionPanel();
                             await inscriptionApiDiscardAll();
                             await sleep(state.inscriptionDiscardDelay);
                             continue;
                         }
+                        if (!state.inscriptionAutoEquip) inscriptionLog('自动装配未开启，停止等待处理');
                         setStatus('铭文目标达成，已停止', 'run');
                         wecomEnqueue('铭文命中', '铭文目标已达成');
                         autoInscriptionRunning = false;
@@ -3237,23 +3248,13 @@
                     inscriptionStats.kept += 1;
                     updateInscriptionPanel();
                     wecomEnqueue('铭文命中', '第' + inscriptionStats.total + '次 | ' + results.map(function (item) { return item.text; }).join('，'));
-                    if (state.inscriptionAutoEquip) {
-                        var info2 = await fetchInscriptionInfo();
-                        var slots2 = (info2 && (info2.inscriptions || info2.slots)) || [];
-                        for (var mi = 0; mi < decision.matches.length; mi++) {
-                            var match2 = decision.matches[mi];
-                            for (var si2 = 0; si2 < slots2.length; si2++) {
-                                if (!slots2[si2] || slots2[si2].quality <= 0) continue;
-                                if (String(slots2[si2].stat || '').indexOf(match2.target.stat) < 0) continue;
-                                await inscriptionApiApply(match2.result.pendingIndex, si2);
-                                break;
-                            }
-                        }
+                    inscriptionLog('命中' + decision.matches.length + '条，尝试自动装配...');
+                    if (state.inscriptionAutoEquip && await autoEquipInscriptionResults(decision.matches)) {
                         await inscriptionApiDiscardAll();
                         await sleep(state.inscriptionDiscardDelay);
                         continue;
                     }
-                    // 目标达成，停止
+                    if (!state.inscriptionAutoEquip) inscriptionLog('自动装配未开启，停止等待处理');
                     setStatus('铭文目标达成，已停止', 'run');
                     autoInscriptionRunning = false;
                     updateInscriptionPanel();
@@ -4532,6 +4533,8 @@
             '<label>最小数值<input id="lvscInscriptionMinValue" type="text" placeholder="如 50 或 80%"></label>' +
             '<label>命中模式<select id="lvscInscriptionStopMode"><option value="any">任一满足即保留</option><option value="all">全部满足才保留</option><option value="manual">只手动停止</option></select></label>' +
             '<label class="lvsc-check"><input id="lvscInscriptionAutoEquip" type="checkbox">命中后自动装配</label>' +
+            '<label class="lvsc-check"><input id="lvscEquipCrossStat" type="checkbox" style="margin-left:18px;">允许覆盖不同属性</label>' +
+            '<label class="lvsc-check"><input id="lvscEquipSkipSpirit" type="checkbox" style="margin-left:18px;">跳过神识铭文</label>' +
             '<label>最大次数<input id="lvscInscriptionMaxAttempts" type="number" min="0" step="1" title="填 0 表示无限"></label>' +
             '<label>结果等待(ms)<input id="lvscInscriptionResultDelay" type="number" min="500" step="100"></label>' +
             '<label>洗练模式<select id="lvscInscriptionPullMode"><option value="10">十连</option><option value="100">百连</option></select></label>' +
@@ -4888,6 +4891,10 @@
         onNum('lvscInscriptionResultDelay', 'inscriptionResultDelay', 500);
         onNum('lvscInscriptionDiscardDelay', 'inscriptionDiscardDelay', 300);
         onChk('lvscInscriptionAutoEquip', 'inscriptionAutoEquip');
+        document.getElementById('lvscEquipCrossStat').checked = state.inscriptionEquipCrossStat;
+        document.getElementById('lvscEquipCrossStat').onchange = function () { state.inscriptionEquipCrossStat = this.checked; persistSetting('lvSpiritCleaner.inscriptionEquipCrossStat', this.checked); };
+        document.getElementById('lvscEquipSkipSpirit').checked = state.inscriptionEquipSkipSpirit;
+        document.getElementById('lvscEquipSkipSpirit').onchange = function () { state.inscriptionEquipSkipSpirit = this.checked; persistSetting('lvSpiritCleaner.inscriptionEquipSkipSpirit', this.checked); };
         document.getElementById('lvscInscriptionPullMode').value = String(state.inscriptionPullMode);
         document.getElementById('lvscInscriptionPullMode').onchange = function () {
             state.inscriptionPullMode = Number(this.value) || 10;
