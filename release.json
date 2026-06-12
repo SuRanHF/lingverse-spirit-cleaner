@@ -1,17 +1,16 @@
 {
-  "version": "1.4.0",
-  "title": "神识清理 v1.4.0 — 铭文装配重做",
+  "version": "1.4.1",
+  "title": "神识清理 v1.4.1 — 批量炼制 + 装备套装",
   "notes": [
-    "铭文自动装配改为API操作（空槽→同属低品→同属同品低值→跨属性）",
-    "新增：允许跨属性覆盖、跳过神识铭文",
-    "复活下拉过滤非地图节点",
-    "微信通知系统、自动出狱"
+    "批量炼丹炼器：选配方设目标，自动买材料，品质分布日志",
+    "装备套装切换：神识套/战斗套，冥想前后自动换",
+    "统一操作按钮风格"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.4.0",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.4.1",
   "changelog": [
-    { "version": "1.4.0", "title": "铭文装配重做", "notes": ["API装配", "跨属性覆盖", "跳过神识", "地图修复"] },
+    { "version": "1.4.1", "title": "批量炼制+装备套装", "notes": ["批量炼丹炼器", "装备套装切换", "按钮统一"] },
+    { "version": "1.4.0", "title": "铭文装配重做", "notes": ["API装配", "跨属性覆盖", "跳过神识"] },
     { "version": "1.3.9", "title": "微信通知系统", "notes": ["清理/冥想/死亡/统计通知"] },
-    { "version": "1.3.5", "title": "铭文API重写", "notes": ["API直调", "天纹匹配", "装备选择"] },
     { "version": "1.3.0", "title": "操作逻辑大优化", "notes": ["清理↔监测", "复活恢复", "自动切探索"] },
     { "version": "1.2.0", "title": "大版本更新", "notes": ["铭文天纹", "企业微信", "自动收徒"] }
   ]

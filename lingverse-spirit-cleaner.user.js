@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.4.0
+// @version      1.4.1
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -95,6 +95,120 @@
     var autoTrialRunning = false;
     var autoTreasureRunning = false;
     var autoInscriptionRunning = false;
+    var autoCraftRunning = false;
+
+    async function fetchRecipes(type) {
+        if (!gameApi()) return [];
+        var ep = type === 'alchemy' ? '/api/game/alchemy/recipes' : '/api/game/forge/recipes';
+        try {
+            var res = await gameApi().get(ep);
+            if (res && res.code === 200) {
+                // 兼容多种返回格式
+                if (Array.isArray(res.data)) return res.data;
+                if (res.data && Array.isArray(res.data.recipes)) return res.data.recipes;
+                if (res.data && Array.isArray(res.data.items)) return res.data.items;
+                if (res.data && Array.isArray(res.data.list)) return res.data.list;
+                // 可能 data 是对象，数字键
+                var arr = [];
+                for (var k in res.data) { if (res.data.hasOwnProperty(k) && !isNaN(Number(k))) arr.push(res.data[k]); else if (res.data.hasOwnProperty(k) && typeof res.data[k] === 'object' && res.data[k] !== null) arr.push(res.data[k]); }
+                if (arr.length) return arr;
+            }
+            console.log('[fetchRecipes] unexpected format', JSON.stringify(res).substring(0, 300));
+        } catch (_) {}
+        return [];
+    }
+    function getCraftItemId(recipe, type) {
+        return String(type === 'alchemy' ? (recipe.pillId || recipe.id || '') : (recipe.recipeId || recipe.id || ''));
+    }
+    function getCraftItemName(recipe, type) {
+        return recipe.pillName || recipe.name || recipe.itemName || '';
+    }
+    var _craftStats = { total: 0, startCount: 0 };
+    async function autoCraftLoop() {
+        if (autoCraftRunning || running || autoInscriptionRunning) { setStatus('其他流程运行中', 'warn'); return; }
+        syncSettingsFromUi();
+        if (!state.craftRecipeId || !gameApi()) { setStatus('请先选择配方', 'warn'); return; }
+        autoCraftRunning = true;
+        var type = state.craftType;
+        var recipeId = state.craftRecipeId;
+        var target = state.craftTargetCount;
+        var autoBuy = state.craftAutoBuyMats;
+        updateMeter();
+        // 取配方信息
+        var recipes = await fetchRecipes(type);
+        var recipe = null;
+        for (var ri = 0; ri < recipes.length; ri++) { if (getCraftItemId(recipes[ri], type) === recipeId) { recipe = recipes[ri]; break; } }
+        if (!recipe) { setStatus('未找到配方', 'warn'); autoCraftRunning = false; return; }
+        var name = getCraftItemName(recipe, type);
+        // 查当前数量
+        var invRes = await gameApi().get('/api/game/inventory');
+        var current = 0;
+        if (invRes && invRes.code === 200 && Array.isArray(invRes.data)) {
+            for (var ii = 0; ii < invRes.data.length; ii++) {
+                var item = invRes.data[ii];
+                if (String(item.templateId || '') === recipeId || String(item.id || '') === recipeId || (item.name || item.itemName || '').indexOf(name) >= 0) {
+                    current += Number(item.quantity || item.count || 1);
+                }
+            }
+        }
+        craftLog('开始炼制: ' + name + ' | 目标' + target + '次' + (autoBuy ? ' | 自动买材料' : ''));
+        setStatus('开始炼制: ' + name + ' 目标' + target, 'run');
+        // 每次炼制数量：用户设了就用（受游戏上限约束），没设用游戏上限
+        var gameCap = type === 'alchemy' ? 100 : 50;
+        var batchCap = state.craftBatchSize > 0 ? Math.min(state.craftBatchSize, gameCap) : gameCap;
+        var crafted = 0;
+        while (autoCraftRunning && crafted < target) {
+            if (autoBuy && recipe.materials && recipe.materials.length) {
+                for (var mi = 0; mi < recipe.materials.length; mi++) {
+                    var mat = recipe.materials[mi];
+                    var needed = Math.max(0, (mat.required || mat.amount || 1) * Math.min(batchCap, target - crafted));
+                    if (needed > 0) {
+                        try { await gameApi().post('/api/game/craft/quick-buy-mats', { type: type, id: recipeId, amount: needed }); } catch (_) {}
+                        await sleep(300);
+                    }
+                }
+            }
+            // 每次炼上限或剩余数量
+            var batchCount = Math.min(batchCap, target - crafted);
+            var craftEp = type === 'alchemy' ? '/api/game/alchemy/batch-craft' : '/api/game/forge/batch-craft';
+            var craftKey = type === 'alchemy' ? 'pillId' : 'recipeId';
+            var payload = {}; payload[craftKey] = recipeId; payload.count = batchCount;
+            var craftRes = await gameApi().post(craftEp, payload);
+            if (!craftRes || craftRes.code !== 200) {
+                craftLog('失败: ' + ((craftRes && craftRes.message) || '未知'));
+                setStatus('炼制失败', 'warn');
+                await sleep(2000);
+                continue;
+            }
+            var actualCount = Number(craftRes.data && craftRes.data.craftCount) || batchCount;
+            crafted += actualCount;
+            // 从 message 字符串解析品质分布
+            var qualityTally = {};
+            var msg = (craftRes.data && craftRes.data.message) || '';
+            var tallyMatch = msg.match(/共锻.*?:\s*(.+?)(?:\s*\(|$)/) || msg.match(/共炼.*?:\s*(.+?)(?:\s*\(|$)/);
+            if (tallyMatch) {
+                var items = tallyMatch[1].split(/[、，,\s]+/);
+                for (var ti = 0; ti < items.length; ti++) {
+                    var pair = items[ti].match(/^(.+?)x(\d+)$/);
+                    if (pair) qualityTally[pair[1]] = (qualityTally[pair[1]] || 0) + parseInt(pair[2], 10);
+                }
+            }
+            var parts = [];
+            for (var qk in qualityTally) { if (qualityTally.hasOwnProperty(qk)) parts.push(qk + '×' + qualityTally[qk]); }
+            craftLog('炼+' + actualCount + ' | ' + Math.min(crafted, target) + '/' + target + (parts.length ? ' | ' + parts.join(' ') : ''));
+            setStatus('炼制: ' + name + ' ' + crafted + '/' + target, 'run');
+            await sleep(600);
+        }
+        autoCraftRunning = false;
+        updateMeter();
+        craftLog(crafted >= target ? '完成! 共炼' + crafted + '次' : '停止 | ' + crafted + '/' + target);
+        setStatus('炼制完成: ' + name + ' ' + crafted + '/' + target, 'run');
+    }
+    function stopCraft() {
+        autoCraftRunning = false;
+        updateMeter();
+        setStatus('炼制已停止', 'idle');
+    }
     var loopTimer = null;
     var busyEvent = false;
     var checkingCloudUpdate = false;
@@ -106,7 +220,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.4.0';
+    var SCRIPT_VERSION = '1.4.1';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -145,6 +259,34 @@
         return p.currentArea || p.area || p.zone || (a.length > 0 ? a[0] : '');
     }
     var autoBailRunning = false;
+
+    // 装备套装切换
+    async function captureEquipSet(setKey) {
+        if (!gameApi()) { setStatus('API不可用', 'warn'); return; }
+        var ids = [];
+        try {
+            var res = await gameApi().get('/api/game/equipment/current');
+            if (res && res.code === 200 && Array.isArray(res.data)) {
+                for (var ei = 0; ei < res.data.length; ei++) {
+                    var id = res.data[ei].playerItemId || res.data[ei].id || res.data[ei].itemId;
+                    if (id) ids.push(String(id));
+                }
+            }
+        } catch (_) {}
+        state[setKey] = ids;
+        localStorage.setItem('lvSpiritCleaner.' + setKey, JSON.stringify(ids));
+        var label = setKey === 'spiritEquipIds' ? '神识套' : '战斗套';
+        setStatus(label + '已记录 ' + ids.length + ' 件', 'run');
+    }
+    async function equipSet(ids) {
+        if (!gameApi() || !ids || !ids.length) return;
+        for (var ei = 0; ei < ids.length; ei++) {
+            try { await gameApi().post('/api/player/equip', { itemId: ids[ei] }); } catch (_) {}
+            await sleep(200);
+        }
+        await refreshPlayer();
+    }
+
     // 自动出狱：检测并保释
     async function checkAndAutoBail(manual) {
         if (autoBailRunning || !gameApi()) return;
@@ -237,6 +379,11 @@
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
         {
+            version: '1.4.1',
+            title: '批量炼丹炼器 + 装备套装',
+            notes: ['新增批量炼丹炼器：选配方设目标数量，自动买材料，品质分布日志。', '装备套装切换：记录神识套/战斗套，冥想前后自动切换。', '统一操作按钮风格。']
+        },
+        {
             version: '1.4.0',
             title: '铭文装配重做 + 地图修复',
             notes: ['铭文自动装配改为API操作，策略：空槽→同属低品→同属同品低值。', '新增复选框：允许跨属性覆盖、跳过神识铭文。', '复活下拉过滤渡劫/传送等非地图节点。', '微信通知系统、自动出狱、自动过验证。']
@@ -321,6 +468,14 @@
         recruitIntervalMs: readNumber('lvSpiritCleaner.recruitIntervalMs', 5000),
         autoMasterRequests: localStorage.getItem('lvSpiritCleaner.autoMasterRequests') !== '0',
         autoBail: localStorage.getItem('lvSpiritCleaner.autoBail') !== '0',
+        equipSwapEnabled: localStorage.getItem('lvSpiritCleaner.equipSwapEnabled') === '1',
+        spiritEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.spiritEquipIds') || '[]'),
+        combatEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.combatEquipIds') || '[]'),
+        craftType: localStorage.getItem('lvSpiritCleaner.craftType') || 'alchemy',
+        craftRecipeId: localStorage.getItem('lvSpiritCleaner.craftRecipeId') || '',
+        craftTargetCount: readNumber('lvSpiritCleaner.craftTargetCount', 10),
+        craftBatchSize: readNumber('lvSpiritCleaner.craftBatchSize', 0),
+        craftAutoBuyMats: localStorage.getItem('lvSpiritCleaner.craftAutoBuyMats') === '1',
 
         // === 铭文 ===
         inscriptionTargets: localStorage.getItem('lvSpiritCleaner.inscriptionTargets') || '攻击:50,防御:50,气血:100,神识:20',
@@ -1079,6 +1234,11 @@
         if (info.maxSpirit <= 0 || info.spirit >= targetSpirit) return true;
 
         setStatus('神识不足，开始冥想到 ' + targetSpirit, 'run');
+        // 切换神识套
+        if (state.equipSwapEnabled && state.spiritEquipIds.length) {
+            setStatus('切换神识套...', 'run');
+            await equipSet(state.spiritEquipIds);
+        }
         if (await tryAdvancedMeditateOnce()) {
             info = getSpiritInfo();
             if (info.spirit >= info.cost && info.spirit > state.reserve) return true;
@@ -1126,6 +1286,11 @@
 
         setStatus('神识已到阈值，收功', 'run');
         await stopMeditationAndRefresh();
+        // 切换回战斗套
+        if (state.equipSwapEnabled && state.combatEquipIds.length) {
+            setStatus('切回战斗套...', 'run');
+            await equipSet(state.combatEquipIds);
+        }
         return true;
     }
 
@@ -2928,6 +3093,13 @@
             log.textContent = log.textContent.substring(0, 8000);
         }
     }
+    function craftLog(message) {
+        var log = document.getElementById('lvscCraftLog');
+        if (!log) return;
+        var time = new Date().toLocaleTimeString();
+        log.textContent = '[' + time + '] ' + message + '\n' + (log.textContent || '');
+        if (log.textContent.length > 5000) log.textContent = log.textContent.substring(0, 5000);
+    }
 
     function parseInscriptionResultCards() {
         var cards = document.querySelectorAll('.insc-result-card');
@@ -4338,7 +4510,7 @@
             '#lvscRefreshBtn{width:72px;height:34px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.12)!important}',
             '#lvscMonitorBtn{height:34px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
             '#lvscAutoTrialBtn,#lvscAutoTreasureBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
-            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
+            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
             '#lvscAutoInscriptionBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
             '#lvscInscriptionStats{font-size:12px;color:#9be7c3}',
             '#lvscInscriptionLog,#lvscRecruitLog{min-height:130px;max-height:190px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px}',
@@ -4462,6 +4634,18 @@
             '<div class="lvsc-help">自动吞噬装备（优先同类型有属性的装备）或材料。装备吞噬：POST /api/game/natal/artifact/devour-equipment；材料吞噬：POST /api/game/natal/artifact/devour。</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
+            '<div class="lvsc-section-title-row"><span>批量炼制</span></div>' +
+            '<div class="lvsc-grid2">' +
+            '<label>类型<select id="lvscCraftType"><option value="alchemy">炼丹</option><option value="forge">炼器</option></select></label>' +
+            '<label>配方<select id="lvscCraftRecipe"><option value="">点击刷新</option></select><button id="lvscRefreshRecipes" style="height:29px;padding:0 8px;margin-left:4px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;font-size:11px;">刷新</button></label>' +
+            '<label>目标数量<input id="lvscCraftTargetCount" type="number" min="1" step="1"></label>' +
+            '<label>每次炼制<input id="lvscCraftBatchSize" type="number" min="1" max="50" step="1" placeholder="上限"></label>' +
+            '<label class="lvsc-check"><input id="lvscCraftAutoBuyMats" type="checkbox">自动购买材料</label>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;"><button id="lvscAutoCraftBtn" style="flex:1;height:34px;background:#dbb970;color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700;">开始炼制</button><button id="lvscStopCraftBtn" style="flex:1;height:34px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28)!important;border-radius:6px;cursor:pointer;font-weight:700;display:none;">停止</button></div>' +
+            '<div id="lvscCraftLog" style="min-height:80px;max-height:150px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace;">待命</div>' +
+            '</div>' +
+            '<div class="lvsc-section">' +
             '<div class="lvsc-section-title-row"><span>自动出狱</span><label class="lvsc-check"><input id="lvscAutoBail" type="checkbox">检测禁闭并消耗仙缘保释</label></div>' +
             '<div class="lvsc-help">每30秒检测一次是否被天道禁闭，仙缘足够时自动保释出狱。</div>' +
             '</div>' +
@@ -4490,6 +4674,9 @@
             '<label>复活后前往<select id="lvscReviveExploreArea"><option value="">（不跳转）</option></select><button id="lvscRefreshAreas" style="height:29px;padding:0 8px;margin-left:4px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;font-size:11px;">刷新地图</button></label>' +
             '<label class="lvsc-check"><input id="lvscCheckDaoyunBoost" type="checkbox">启动前检查道韵加成</label>' +
             '<label class="lvsc-check"><input id="lvscUseAdvancedMeditate" type="checkbox">优先仙缘高级冥想</label>' +
+            '<div class="lvsc-section-title-row"><span>装备套装</span><label class="lvsc-check"><input id="lvscEquipSwapEnabled" type="checkbox">冥想前后自动切换</label></div>' +
+            '<div class="lvsc-grid2"><button id="lvscCaptureSpiritSet">记录为神识套</button><button id="lvscCaptureCombatSet">记录为战斗套</button></div>' +
+            '<div class="lvsc-help">先穿好神识装点"记录为神识套"，再穿好战斗装点"记录为战斗套"。勾上后冥想前自动切神识套，收功后切回战斗套。</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
             '<div class="lvsc-section-title">藏宝图</div>' +
@@ -4755,6 +4942,47 @@
             wecomEnqueue('✅ 清理结束', '运行时长：120分钟\n探索次数：342\n遭遇妖兽：47次\n死亡次数：1');
             setStatus('测试通知已发送', 'run');
         };
+        // 批量炼制
+        document.getElementById('lvscCraftType').value = state.craftType;
+        document.getElementById('lvscCraftType').onchange = function () { state.craftType = this.value; persistSetting('lvSpiritCleaner.craftType', this.value); refreshCraftRecipes(); };
+        document.getElementById('lvscCraftRecipe').value = state.craftRecipeId;
+        document.getElementById('lvscCraftRecipe').onchange = function () { state.craftRecipeId = this.value; persistSetting('lvSpiritCleaner.craftRecipeId', this.value); };
+        document.getElementById('lvscCraftTargetCount').value = String(state.craftTargetCount);
+        document.getElementById('lvscCraftTargetCount').onchange = function () { state.craftTargetCount = Math.max(1, Number(this.value) || 10); persistSetting('lvSpiritCleaner.craftTargetCount', String(state.craftTargetCount)); };
+        document.getElementById('lvscCraftBatchSize').value = String(state.craftBatchSize || '');
+        document.getElementById('lvscCraftBatchSize').onchange = function () { state.craftBatchSize = Math.max(0, Number(this.value) || 0); persistSetting('lvSpiritCleaner.craftBatchSize', String(state.craftBatchSize)); };
+        document.getElementById('lvscCraftAutoBuyMats').checked = state.craftAutoBuyMats;
+        document.getElementById('lvscCraftAutoBuyMats').onchange = function () { state.craftAutoBuyMats = this.checked; persistSetting('lvSpiritCleaner.craftAutoBuyMats', this.checked); };
+        async function refreshCraftRecipes() {
+            var sel = document.getElementById('lvscCraftRecipe');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">加载中...</option>';
+            var recipes = await fetchRecipes(state.craftType);
+            console.log('[refreshCraftRecipes] got', recipes.length, 'recipes for', state.craftType);
+            sel.innerHTML = '<option value="">选择配方</option>';
+            if (!recipes.length) { sel.innerHTML = '<option value="">无配方或加载失败</option>'; return; }
+            for (var ri = 0; ri < recipes.length; ri++) {
+                var r = recipes[ri];
+                var id = getCraftItemId(r, state.craftType);
+                var name = getCraftItemName(r, state.craftType);
+                if (!id || !name) continue;
+                sel.innerHTML += '<option value="' + id + '"' + (state.craftRecipeId === id ? ' selected' : '') + '>' + name + '</option>';
+            }
+            if (state.craftRecipeId && !sel.value) sel.value = state.craftRecipeId;
+        }
+        document.getElementById('lvscRefreshRecipes').onclick = refreshCraftRecipes;
+        setTimeout(refreshCraftRecipes, 1500);
+        document.getElementById('lvscAutoCraftBtn').onclick = function () {
+            if (autoCraftRunning) return;
+            document.getElementById('lvscAutoCraftBtn').style.display = 'none';
+            document.getElementById('lvscStopCraftBtn').style.display = '';
+            autoCraftLoop().finally(function () {
+                document.getElementById('lvscAutoCraftBtn').style.display = '';
+                document.getElementById('lvscStopCraftBtn').style.display = 'none';
+            });
+        };
+        document.getElementById('lvscStopCraftBtn').onclick = stopCraft;
+
         // 每30秒自动检查是否入狱（需开启自动出狱）
         document.getElementById('lvscAutoBail').checked = state.autoBail;
         document.getElementById('lvscAutoBail').onchange = function () {
@@ -4871,6 +5099,11 @@
         onChk('lvscAutoReviveDeath', 'autoReviveDeath');
         onChk('lvscCheckDaoyunBoost', 'checkDaoyunBoost');
         onChk('lvscUseAdvancedMeditate', 'useAdvancedMeditate');
+        // 装备套装
+        document.getElementById('lvscEquipSwapEnabled').checked = state.equipSwapEnabled;
+        document.getElementById('lvscEquipSwapEnabled').onchange = function () { state.equipSwapEnabled = this.checked; persistSetting('lvSpiritCleaner.equipSwapEnabled', this.checked); };
+        document.getElementById('lvscCaptureSpiritSet').onclick = function () { captureEquipSet('spiritEquipIds'); };
+        document.getElementById('lvscCaptureCombatSet').onclick = function () { captureEquipSet('combatEquipIds'); };
         onSel('lvscInscriptionQuality', 'inscriptionQuality', ['any', '凡纹', '灵纹', '宝纹', '仙纹', '神纹', '圣纹', '天纹']);
         // 铭文属性和最小值变化时需要同步 targets
         document.getElementById('lvscInscriptionStat').onchange = function () {
