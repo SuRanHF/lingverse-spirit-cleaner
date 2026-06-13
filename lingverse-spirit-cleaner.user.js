@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.5.1
+// @version      1.5.2
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -220,7 +220,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.5.1';
+    var SCRIPT_VERSION = '1.5.2';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -268,11 +268,156 @@
     var autoPavilionRunning = false;
     var autoTalismanRunning = false;
 
+    // --- 涅槃重生丹 ---
+    async function ensureNirvanaPill() {
+        if (!gameApi()) return;
+        // 查背包
+        try { var invRes = await gameApi().get('/api/game/inventory'); } catch (_) { return; }
+        if (!invRes || invRes.code !== 200 || !Array.isArray(invRes.data)) return;
+        var has = invRes.data.some(function(item) {
+            var tid = String(item.templateId || '').toLowerCase();
+            return tid.indexOf('pill_nirvana_') >= 0 || tid.indexOf('bp_pill_rebirth') >= 0;
+        });
+        if (has) {
+            // 使用
+            var item = invRes.data.find(function(it) { var t = String(it.templateId || '').toLowerCase(); return t.indexOf('pill_nirvana_') >= 0 || t.indexOf('bp_pill_rebirth') >= 0; });
+            if (item) {
+                var itemId = item.id || item.itemId || item.instanceId;
+                if (itemId) {
+                    setStatus('使用涅槃重生丹...', 'run');
+                    try { await gameApi().post('/api/game/use-item', { itemId: itemId }); } catch (_) {}
+                }
+            }
+            return;
+        }
+        // 背包没有 → 炼造
+        try {
+            var recipes = await gameApi().get('/api/game/alchemy/recipes');
+            if (!recipes || recipes.code !== 200 || !recipes.data) return;
+            var list = Array.isArray(recipes.data) ? recipes.data : (recipes.data.recipes || []);
+            var nirvana = list.find(function(r) {
+                var name = (r.pillName || r.name || '').toLowerCase();
+                var tid = String(r.pillId || r.id || '').toLowerCase();
+                return name.indexOf('涅槃') >= 0 || name.indexOf('重生') >= 0 || tid.indexOf('pill_nirvana_') >= 0;
+            });
+            if (nirvana) {
+                var pillId = nirvana.pillId || nirvana.id;
+                setStatus('炼造涅槃重生丹...', 'run');
+                var craftRes = await gameApi().post('/api/game/alchemy/craft', { pillId: pillId });
+                if (craftRes && craftRes.code === 200) {
+                    await sleep(500);
+                    // 炼好了，查背包使用
+                    var invRes2 = await gameApi().get('/api/game/inventory');
+                    if (invRes2 && invRes2.code === 200 && Array.isArray(invRes2.data)) {
+                        var crafted = invRes2.data.find(function(it) { var t = String(it.templateId || '').toLowerCase(); return t.indexOf('pill_nirvana_') >= 0 || t.indexOf('bp_pill_rebirth') >= 0; });
+                        if (crafted) {
+                            var cid = crafted.id || crafted.itemId || crafted.instanceId;
+                            if (cid) { try { await gameApi().post('/api/game/use-item', { itemId: cid }); setStatus('涅槃重生丹已使用', 'run'); } catch (_) {} }
+                        }
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+
+    // --- 配置导入导出 ---
+    function exportConfig() {
+        var cfg = {};
+        for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf('lvSpiritCleaner.') === 0) cfg[k] = localStorage.getItem(k);
+        }
+        var blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = 'lingverse-config-' + new Date().toISOString().slice(0, 10) + '.json';
+        a.click(); URL.revokeObjectURL(a.href);
+        setStatus('配置已导出', 'run');
+    }
+    function importConfig() {
+        var input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
+        input.onchange = function() {
+            var file = input.files[0]; if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    var cfg = JSON.parse(reader.result);
+                    var cnt = 0;
+                    for (var k in cfg) { if (cfg.hasOwnProperty(k) && k.indexOf('lvSpiritCleaner.') === 0) { localStorage.setItem(k, cfg[k]); cnt++; } }
+                    setStatus('已导入' + cnt + '项，刷新生效', 'run');
+                } catch (e) { setStatus('导入失败: ' + e.message, 'warn'); }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    }
+    var autoSweepRunning = false;
+    var _sweepCount = 0, _sweepMaps = 0, _sweepCost = 0;
+
+    // --- 试练塔扫荡 ---
+    async function autoSweepLoop() {
+        if (autoSweepRunning || !gameApi()) return;
+        var maxSweep = Math.max(0, Number(document.getElementById('lvscSweepMax').value) || 0);
+        var delay = Math.max(500, Number(document.getElementById('lvscSweepDelay').value) || 3000);
+        autoSweepRunning = true; _sweepCount = 0; _sweepMaps = 0; _sweepCost = 0;
+        document.getElementById('lvscSweepStartBtn').style.display = 'none';
+        document.getElementById('lvscSweepStopBtn').style.display = '';
+        updateMeter(); sweepLog('扫荡开始' + (maxSweep > 0 ? ' 上限' + maxSweep + '次' : ' 无限'));
+        while (autoSweepRunning) {
+            if (maxSweep > 0 && _sweepCount >= maxSweep) { sweepLog('达到上限' + maxSweep + '次，停止'); break; }
+            try {
+                var r = await gameApi().post('/api/trial-tower/sweep', {});
+                if (!autoSweepRunning) break;
+                if (r && r.code === 200) {
+                    _sweepCount++;
+                    var floor = (r.data && r.data.reachedFloor) || 0;
+                    var maps = (r.data && r.data.rewardMaps) || (r.data && r.data.treasureMap) || 0;
+                    _sweepMaps += maps;
+                    _sweepCost += (r.data && r.data.cost) || 0;
+                    sweepLog('✓ 第' + _sweepCount + '次 第' + floor + '层 藏宝图+' + maps);
+                } else {
+                    sweepLog('✗ 失败: ' + ((r && r.message) || ''));
+                    if ((r && r.message || '').indexOf('灵石不足') >= 0) { sweepLog('灵石不足，停止'); break; }
+                }
+            } catch (e) { sweepLog('✗ ' + (e.message || '')); }
+            if (autoSweepRunning) await sleep(delay);
+        }
+        autoSweepRunning = false;
+        document.getElementById('lvscSweepStartBtn').style.display = '';
+        document.getElementById('lvscSweepStopBtn').style.display = 'none';
+        updateMeter();
+        sweepLog('完成: ' + _sweepCount + '次 藏宝图+' + _sweepMaps + ' 耗灵石' + _sweepCost);
+    }
+    function stopSweep() { autoSweepRunning = false; }
+    function sweepLog(msg) { var l = document.getElementById('lvscSweepLog'); if (!l) return; var t = new Date().toLocaleTimeString(); l.textContent = '[' + t + '] ' + msg + '\n' + (l.textContent || ''); if (l.textContent.length > 4000) l.textContent = l.textContent.substring(0, 4000); }
+
     // --- 灵田 ---
     async function farmOverview() { if (!gameApi()) return null; try { var r = await gameApi().get('/api/game/player-sect/farm/overview?page=1&pageSize=1'); return (r && r.code === 200 && r.data) ? r.data : null; } catch (_) { return null; } }
     async function farmHarvest() { if (!gameApi()) return false; var r = await gameApi().post('/api/game/player-sect/farm/harvest-all', {}); return !!(r && r.code === 200); }
+    var _lastFarmExpandTime = 0;
     async function farmPlant(seedId) { if (!gameApi() || !seedId) return false; var r = await gameApi().post('/api/game/player-sect/farm/plant-all', { seedId: seedId }); return !!(r && r.code === 200); }
-    async function autoFarmLoop() { if (autoFarmRunning) return; autoFarmRunning = true; updateMeter(); farmLog('灵田监控启动'); while (autoFarmRunning) { try { var data = await farmOverview(); if (!data) { farmLog('获取灵田数据失败'); await sleep(10000); continue; } var mature = data.myMatureCount || 0, idle = data.myIdleCount || 0; if (mature > 0 && state.farmAutoHarvest) { farmLog('收获成熟 ×' + mature); await farmHarvest(); await sleep(500); } if (idle > 0 && state.farmAutoPlant && state.farmSeedId) { farmLog('种植 ' + state.farmSeedName + ' ×' + idle); await farmPlant(state.farmSeedId); await sleep(500); } } catch (e) { farmLog('异常: ' + (e.message || '')); } await sleep(state.farmInterval * 1000); } updateMeter(); }
+    async function farmExpand(wantCount) {
+        if (!gameApi() || !wantCount) return false;
+        // 从 overview 动态计算最大开垦数
+        var max = wantCount;
+        try {
+            var ov = await farmOverview();
+            if (ov) {
+                var realmLimit = Number(ov.maxFarmClaimCount) || 0;
+                var contrib = Number(ov.myAvailableContribution) || 0;
+                var cost = Number(ov.claimContribCost) || 1;
+                var contribLimit = cost > 0 ? Math.floor(contrib / cost) : 5000;
+                max = Math.min(wantCount, realmLimit || 5000, contribLimit || 5000, 5000);
+                if (max <= 0) { farmLog('贡献不足或已达境界上限'); return false; }
+                if (max < wantCount) farmLog('最大可开' + max + '块（境界上限' + realmLimit + ' 贡献' + contrib + '）');
+            }
+        } catch (_) {}
+        var r = await gameApi().post('/api/game/player-sect/farm/claim-batch', { count: max });
+        if (r && r.code === 200) { farmLog('开垦成功 ×' + max); return true; }
+        if (max > 1) { var r2 = await gameApi().post('/api/game/player-sect/farm/claim-batch', { count: 1 }); if (r2 && r2.code === 200) { farmLog('开垦成功 ×1'); return true; } }
+        farmLog('开垦失败: ' + (r2 ? (r2.message || r2.code) : (r ? (r.message || r.code) : 'err')));
+        return false;
+    }
+    async function autoFarmLoop() { if (autoFarmRunning) return; autoFarmRunning = true; updateMeter(); farmLog('灵田监控启动'); while (autoFarmRunning) { try { var data = await farmOverview(); if (!data) { farmLog('获取灵田数据失败'); await sleep(10000); continue; } var mature = data.myMatureCount || 0, idle = data.myIdleCount || 0; if (mature > 0 && state.farmAutoHarvest) { farmLog('收获成熟 ×' + mature); await farmHarvest(); await sleep(500); } if (idle > 0 && state.farmAutoPlant && state.farmSeedId) { farmLog('种植 ' + state.farmSeedName + ' ×' + idle); await farmPlant(state.farmSeedId); await sleep(500); } if (state.farmExpandCount >= 0 && state.farmExpandHours > 0 && Date.now() - _lastFarmExpandTime > state.farmExpandHours * 3600000) { _lastFarmExpandTime = Date.now(); var cnt = state.farmExpandCount > 0 ? state.farmExpandCount : 999; farmLog('自动开垦 ' + (state.farmExpandCount > 0 ? cnt + ' 块' : '最大')); await farmExpand(cnt); } } catch (e) { farmLog('异常: ' + (e.message || '')); } await sleep(state.farmInterval * 1000); } updateMeter(); }
     function stopFarm() { autoFarmRunning = false; updateMeter(); }
     function farmLog(msg) { var log = document.getElementById('lvscFarmLog'); if (!log) return; var t = new Date().toLocaleTimeString(); log.textContent = '[' + t + '] ' + msg + '\n' + (log.textContent || ''); if (log.textContent.length > 4000) log.textContent = log.textContent.substring(0, 4000); }
 
@@ -408,6 +553,11 @@
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
         {
+            version: '1.5.2',
+            title: '恢复系统重写 + 扫荡 + 昼夜优化',
+            notes: ['恢复系统重写：严格按用户优先级，宗门服务一次回满，吸收灵石批量50块，15秒冷却避免天罚。', '炼制tab新增试练塔扫荡（POST sweep API）。昼夜切换冥想重试+自动收功。', '在线面板UI重做（渐变紫金+毛玻璃+北京时间）。冥想进度条bug修复。']
+        },
+        {
             version: '1.5.1',
             title: '珍宝阁+灵田+制符+批量用符',
             notes: ['炼制tab新增珍宝阁(宗门商品API直购)和批量用符(按类型批量使用符篆)。', '炼制类型新增制符。自动tab新增灵田自动收获+种植。', '动态DOM注入架构，不动HTML字符串，好维护。']
@@ -493,8 +643,8 @@
         autoRecoveryThreshold: readNumber('lvSpiritCleaner.autoRecoveryThreshold', 80),
         autoRecoveryTarget: readNumber('lvSpiritCleaner.autoRecoveryTarget', 100),
         sectQuickRecovery: localStorage.getItem('lvSpiritCleaner.sectQuickRecovery') === '1',
-        autoHpPriority: localStorage.getItem('lvSpiritCleaner.autoHpPriority') || '灵力,丹药,宗门',
-        autoMpPriority: localStorage.getItem('lvSpiritCleaner.autoMpPriority') || '灵石,丹药,宗门',
+        autoHpPriority: localStorage.getItem('lvSpiritCleaner.autoHpPriority') || '宗门,灵力,丹药',
+        autoMpPriority: localStorage.getItem('lvSpiritCleaner.autoMpPriority') || '宗门,丹药,灵石',
         autoRepair: localStorage.getItem('lvSpiritCleaner.autoRepair') !== '0',
         repairThreshold: readNumber('lvSpiritCleaner.repairThreshold', 70),
         autoVoidBody: localStorage.getItem('lvSpiritCleaner.autoVoidBody') !== '0',
@@ -504,6 +654,7 @@
         hiddenCharmRarity: readNumber('lvSpiritCleaner.hiddenCharmRarity', 0),
         hiddenCharmBuyQty: readNumber('lvSpiritCleaner.hiddenCharmBuyQty', 1),
         hiddenCharmRetryMs: readNumber('lvSpiritCleaner.hiddenCharmRetryMs', 60000),
+        autoNirvanaPill: localStorage.getItem('lvSpiritCleaner.autoNirvanaPill') === '1',
         autoReviveDeath: localStorage.getItem('lvSpiritCleaner.autoReviveDeath') !== '0',
         reviveExploreArea: localStorage.getItem('lvSpiritCleaner.reviveExploreArea') || '',
 
@@ -524,6 +675,8 @@
         farmSeedId: localStorage.getItem('lvSpiritCleaner.farmSeedId') || '',
         farmSeedName: localStorage.getItem('lvSpiritCleaner.farmSeedName') || '',
         farmInterval: readNumber('lvSpiritCleaner.farmInterval', 30),
+        farmExpandCount: readNumber('lvSpiritCleaner.farmExpandCount', 0),
+        farmExpandHours: readNumber('lvSpiritCleaner.farmExpandHours', 1),
         pavilionItemId: localStorage.getItem('lvSpiritCleaner.pavilionItemId') || '',
         pavilionItemName: localStorage.getItem('lvSpiritCleaner.pavilionItemName') || '',
         pavilionQty: readNumber('lvSpiritCleaner.pavilionQty', 99),
@@ -1385,6 +1538,9 @@
             toast('自动冥想启动失败：' + ((startRes && startRes.message) || '未知错误'));
             return false;
         }
+        // API成功后手动初始化游戏进度条
+        if (typeof window.startMeditationUI === 'function') { try { window.startMeditationUI(); } catch (_) {} }
+        if (startRes.data && typeof startRes.data.spiritPerMinute === 'number') { window.meditationSpiritRate = startRes.data.spiritPerMinute; }
 
         var spiritPerMinute = Number(startRes.data && startRes.data.spiritPerMinute || window.meditationSpiritRate || 0);
         var estMin = info.maxSpirit > 0 && spiritPerMinute > 0 ? Math.ceil((targetSpirit - info.spirit) / spiritPerMinute) : '?';
@@ -2492,45 +2648,55 @@
         return chineseStr.split(',').map(function(s) { var k = s.trim(); return map[k] || k; });
     }
 
+    var _lastRecoverTime = 0;
     async function activeRecover() {
         if (!gameApi()) return;
-        syncSettingsFromUi();
-        var mode = state.autoRecoveryMode;
-        if (mode === 'none') return;
-        var needHp = mode === 'hp' || mode === 'both';
-        var needMp = mode === 'mp' || mode === 'both';
-        var threshold = state.autoRecoveryThreshold;
-        var didSomething = false;
-        var maxSteps = 10, step = 0;
-        while (step < maxSteps) {
-            var s = getPlayerHpMp();
-            var hpPct = pct(s.hp, s.maxHp), mpPct = pct(s.mp, s.maxMp);
-            var hpNeed = needHp && hpPct < threshold, mpNeed = needMp && mpPct < threshold;
-            if (!hpNeed && !mpNeed) break;
-            step++; var acted = false;
-            if (hpNeed) {
-                var hpPriority = translatePriority(state.autoHpPriority);
-                for (var pi = 0; pi < hpPriority.length; pi++) {
-                    var m = hpPriority[pi];
-                    if (m === 'mp' && s.mp > s.maxMp * 0.2) { try { var missing = s.maxHp - s.hp; var healAmount = Math.min(missing, Math.floor(s.maxHp * 0.3)); if (healAmount > 0) { await gameApi().post('/api/game/heal-with-mp', { hpAmount: healAmount }); acted = true; } } catch (_) {} }
-                    else if (m === 'pill') { var inv = await fetchInventory(); for (var j = 0; j < inv.length; j++) { if (!isHpPill(inv[j])) continue; var qty = Number(inv[j].quantity || inv[j].count || 0); if (qty <= 0) continue; var itemId = inv[j].id || inv[j].itemId; if (!itemId) continue; try { await gameApi().post('/api/game/use-item', { itemId: itemId }); acted = true; } catch (_) {} break; } }
-                    else if (m === 'sect') { var svcs = await fetchSectShopServicesNew(); for (var k = 0; k < svcs.length; k++) { var name = String(svcs[k].name || '').toLowerCase(); if (name.indexOf('回血') < 0 && name.indexOf('气血') < 0 && name.indexOf('治疗') < 0 && name.indexOf('疗伤') < 0) continue; try { await gameApi().post(svcs[k].buyUrl, svcs[k].buyPayload); acted = true; } catch (_) {} break; } }
-                    if (acted) break;
-                }
-            }
-            if (!acted && mpNeed) {
-                var mpPriority = translatePriority(state.autoMpPriority);
-                for (var pj = 0; pj < mpPriority.length; pj++) {
-                    var mm = mpPriority[pj];
-                    if (mm === 'stone') { try { await gameApi().post('/api/game/absorb-stone', { stoneType: 'spirit', amount: 1 }); acted = true; } catch (_) {} }
-                    else if (mm === 'pill') { var inv2 = await fetchInventory(); for (var j2 = 0; j2 < inv2.length; j2++) { if (!isMpPill(inv2[j2])) continue; var qty2 = Number(inv2[j2].quantity || inv2[j2].count || 0); if (qty2 <= 0) continue; var itemId2 = inv2[j2].id || inv2[j2].itemId; if (!itemId2) continue; try { await gameApi().post('/api/game/use-item', { itemId: itemId2 }); acted = true; } catch (_) {} break; } }
-                    else if (mm === 'sect') { var svcs2 = await fetchSectShopServicesNew(); for (var k2 = 0; k2 < svcs2.length; k2++) { var name2 = String(svcs2[k2].name || '').toLowerCase(); if (name2.indexOf('回灵') < 0 && name2.indexOf('灵力') < 0) continue; try { await gameApi().post(svcs2[k2].buyUrl, svcs2[k2].buyPayload); acted = true; } catch (_) {} break; } }
-                    if (acted) break;
-                }
-            }
-            if (acted) { didSomething = true; await sleep(400); await refreshPlayer(); } else break;
+        // 游戏服务端设置最多15秒同步一次（战后自动恢复）
+        if (Date.now() - _lastRecoverTime >= 15000) {
+            _lastRecoverTime = Date.now();
+            syncSettingsFromUi();
+            var mode = state.autoRecoveryMode, t = state.autoRecoveryThreshold, g = state.autoRecoveryTarget;
+            var hpOn = (mode === 'hp' || mode === 'both') ? 1 : 0;
+            var mpOn = (mode === 'mp' || mode === 'both') ? 1 : 0;
+            var hpP = mapPriorityToGame(state.autoHpPriority, 'hp');
+            var mpP = mapPriorityToGame(state.autoMpPriority, 'mp');
+            try { await gameApi().post('/api/player/settings', { auto_hp_ratio: hpOn ? t : 0, auto_hp_target: hpOn ? g : 0, auto_mp_ratio: mpOn ? t : 0, auto_mp_target: mpOn ? g : 0, auto_hp_priority: hpP, auto_mp_priority: mpP }); } catch (_) {}
         }
-        if (didSomething) setStatus('恢复完成', 'run');
+        // 主动恢复：严格按用户设置的优先级顺序
+        var s = getPlayerHpMp();
+        var hpPct = pct(s.hp, s.maxHp), mpPct = pct(s.mp, s.maxMp);
+        var threshold = state.autoRecoveryThreshold;
+        var needHp = (state.autoRecoveryMode === 'hp' || state.autoRecoveryMode === 'both') && hpPct < threshold;
+        var needMp = (state.autoRecoveryMode === 'mp' || state.autoRecoveryMode === 'both') && mpPct < threshold;
+        if (!needHp && !needMp) return;
+
+        // HP: 按用户优先级顺序
+        if (needHp) {
+            var hpPri = String(state.autoHpPriority || '灵力,丹药,宗门').split(/[,，]+/);
+            for (var hi = 0; hi < hpPri.length; hi++) {
+                var m = hpPri[hi].trim();
+                if (m === 'mp' && s.mp > s.maxMp * 0.2) { var heal = Math.floor(Math.min(s.maxHp - s.hp, s.maxHp * 0.3)); if (heal > 0) { try { var r1 = await gameApi().post('/api/game/heal-with-mp', { hpAmount: heal }); if (r1 && r1.code === 200) { needHp = false; break; } } catch (_) {} } }
+                else if (m === 'pill') { try { var inv = await fetchInventory(); for (var pi = 0; pi < inv.length; pi++) { if (!isHpPill(inv[pi])) continue; if ((inv[pi].quantity || inv[pi].count || 0) <= 0) continue; var iid = inv[pi].id || inv[pi].itemId; if (!iid) continue; var r2 = await gameApi().post('/api/game/use-item', { itemId: iid }); if (r2 && r2.code === 200) { needHp = false; break; } } } catch (_) {} if (!needHp) break; }
+                else if (m === 'sect') { try { var svcs = await fetchSectShopServicesNew(); for (var si = 0; si < svcs.length; si++) { var nm = String(svcs[si].name || '').toLowerCase(); if (nm.indexOf('回血') < 0 && nm.indexOf('气血') < 0 && nm.indexOf('治疗') < 0 && nm.indexOf('疗伤') < 0) continue; var r3 = await gameApi().post(svcs[si].buyUrl, svcs[si].buyPayload); if (r3 && r3.code === 200) { needHp = false; break; } } } catch (_) {} if (!needHp) break; }
+            }
+            if (needHp) needHp = false; // 所有方式都失败了，不再重试
+        }
+        // MP: 按用户优先级顺序
+        if (needMp) {
+            var mpPri = String(state.autoMpPriority || '灵石,丹药,宗门').split(/[,，]+/);
+            for (var mi = 0; mi < mpPri.length; mi++) {
+                var mm = mpPri[mi].trim();
+                if (mm === 'stone') { try { var r4 = await gameApi().post('/api/game/absorb-stone', { stoneType: 'spirit', amount: 50 }); if (r4 && r4.code === 200) { needMp = false; break; } } catch (_) {} }
+                else if (mm === 'pill') { try { var inv2 = await fetchInventory(); for (var pj = 0; pj < inv2.length; pj++) { if (!isMpPill(inv2[pj])) continue; if ((inv2[pj].quantity || inv2[pj].count || 0) <= 0) continue; var iid2 = inv2[pj].id || inv2[pj].itemId; if (!iid2) continue; var r5 = await gameApi().post('/api/game/use-item', { itemId: iid2 }); if (r5 && r5.code === 200) { needMp = false; break; } } } catch (_) {} if (!needMp) break; }
+                else if (mm === 'sect') { try { var svcs2 = await fetchSectShopServicesNew(); for (var sj = 0; sj < svcs2.length; sj++) { var nm2 = String(svcs2[sj].name || '').toLowerCase(); if (nm2.indexOf('回灵') < 0 && nm2.indexOf('灵力') < 0) continue; var r6 = await gameApi().post(svcs2[sj].buyUrl, svcs2[sj].buyPayload); if (r6 && r6.code === 200) { needMp = false; break; } } } catch (_) {} if (!needMp) break; }
+            }
+        }
+    }
+
+    function mapPriorityToGame(pStr, type) {
+        var parts = String(pStr || '').split(/[,，]+/);
+        var valid = type === 'hp' ? ['mp', 'pill', 'adpoint'] : ['stone', 'pill', 'adpoint'];
+        return parts.map(function(p) { var v = p.trim(); return valid.indexOf(v) >= 0 ? v : null; }).filter(Boolean).join(',') || 'pill';
     }
 
     function extractChatPlayerInfo(msgEl) {
@@ -3334,12 +3500,26 @@
     async function autoEquipInscriptionResults(matches) {
         if (!state.inscriptionAutoEquip || !_inscItemId || !gameApi()) return false;
         var info = await fetchInscriptionInfo();
-        if (!info) { inscriptionLog('装配失败：无法获取铭文信息'); return false; }
+        if (!info) { inscriptionLog('装配跳过：无法获取铭文信息'); return false; }
         var slots = info.inscriptions || info.slots || [];
+        if (!Array.isArray(slots)) slots = [];
+        // API 可能只返回已填槽位，用 maxSlots 补全空槽
+        var maxSlots = Number(info.maxSlots || info.totalSlots || info.slotCount || 0);
+        while (maxSlots > 0 && slots.length < maxSlots) { slots.push({ quality: 0, stat: '', value: 0 }); }
         var equipped = 0;
+        var usedSlots = {}; // 记录本轮已装槽位，防止重复装同一个空槽
         var cross = state.inscriptionEquipCrossStat;
         var skipSpirit = state.inscriptionEquipSkipSpirit;
         var sorted = (matches || []).slice().sort(function (a, b) { return Number((b.result || {}).value || 0) - Number((a.result || {}).value || 0); });
+        // 兜底：读不到槽位就直接装，不跳过
+        if (!slots.length) {
+            for (var mi0 = 0; mi0 < sorted.length && autoInscriptionRunning; mi0++) {
+                var r0 = sorted[mi0].result; if (!r0) continue;
+                var ok0 = await inscriptionApiApply(r0.pendingIndex, 0);
+                if (ok0) { equipped++; inscriptionLog('装配: ' + r0.text + ' → 槽位1'); }
+            }
+            return equipped > 0;
+        }
         function slotVal(s) { var v = Number(s.value || 0); var q = Number(s.quality || 0); return q === 7 ? v / 10 : v; }
         function slotValText(s) { var q = Number(s.quality || 0); var v = slotVal(s); return q === 7 ? v.toFixed(1) + '%' : '+' + v; }
         function slotStatNorm(s) { var q = Number(s.quality || 0); return normalizeStatForMatch(inscriptionStatName(s.statType || s.stat, q)); }
@@ -3352,8 +3532,8 @@
             if (skipSpirit && (result.statKey === 'spirit' || target.stat === '神识')) { inscriptionLog('装配跳过(神识): ' + result.text); continue; }
             var bestSlot = -1, bestReason = '';
             var qNum = result.qualityNum || 0;
-            // 1. 空槽位
-            for (var s1 = 0; s1 < slots.length; s1++) { if (!slots[s1] || (slots[s1].quality || 0) <= 0) { bestSlot = s1; bestReason = '空槽' + (s1 + 1); break; } }
+            // 1. 空槽位（跳过本轮已装过的）
+            for (var s1 = 0; s1 < slots.length; s1++) { if (usedSlots[s1]) continue; if (!slots[s1] || (slots[s1].quality || 0) <= 0) { bestSlot = s1; bestReason = '空槽' + (s1 + 1); break; } }
             // 2. 同属性低品质
             if (bestSlot < 0) { var loQ = Infinity; for (var s2 = 0; s2 < slots.length; s2++) { if (!slots[s2] || (slots[s2].quality || 0) <= 0) continue; var q2 = Number(slots[s2].quality || 0); if (q2 >= qNum) continue; if (slotStatNorm(slots[s2]).indexOf(target.stat) < 0) continue; if (q2 < loQ) { bestSlot = s2; loQ = q2; bestReason = '替同属低品' + (s2 + 1); } } }
             // 3. 同属性同品质低数值
@@ -3366,7 +3546,7 @@
             if (bestSlot < 0) { inscriptionLog('装配跳过: ' + result.text); continue; }
             inscriptionLog('装配: ' + result.text + ' → ' + bestReason);
             var ok = await inscriptionApiApply(result.pendingIndex, bestSlot);
-            if (ok) { equipped++; await sleep(300); info = await fetchInscriptionInfo(); slots = (info && (info.inscriptions || info.slots)) || []; }
+            if (ok) { equipped++; usedSlots[bestSlot] = true; await sleep(300); info = await fetchInscriptionInfo(); slots = (info && (info.inscriptions || info.slots)) || []; }
         }
         if (equipped > 0) inscriptionLog('装配完成: ' + equipped + ' 个');
         return equipped > 0;
@@ -3476,6 +3656,17 @@
             return;
         }
         syncSettingsFromUi();
+        // 下拉选了"当前装备" → 读游戏铭文弹窗里的 itemId
+        if (_inscItemId === '__current__') {
+            var foundId = getCurrentInscItemId();
+            if (foundId) {
+                _inscItemId = String(foundId);
+                _inscItemName = '当前装备';
+            } else {
+                setStatus('请先在游戏里打开装备的铭文页面', 'warn');
+                return;
+            }
+        }
         // 兜底：如果 _inscItemId 没设置，直接从 DOM 读
         if (!_inscItemId) {
             var selEl = document.getElementById('lvscInscriptionEquipment');
@@ -3785,25 +3976,30 @@
             }
             var nightCheck = checkNightRestriction();
             if (nightCheck === 'meditate_until_night') {
-                // 白天普通冥想等入夜（不浪费高级冥想/仙缘）
-                var nightMedStarted = false;
+                var nightMedStarted = false, nightMedRetries = 0, lastIsNight = isGameNight();
                 while (running && !isGameNight()) {
                     var ni = getSpiritInfo();
                     if (ni.spirit < ni.maxSpirit && gameApi()) {
                         if (!nightMedStarted) {
                             setStatus('白天挂机冥想等入夜', 'run');
-                            await gameApi().post('/api/game/meditate/start', {});
-                            nightMedStarted = true;
+                            var startNRes = await gameApi().post('/api/game/meditate/start', {});
+                            if (startNRes && startNRes.code === 200) {
+                                if (typeof window.startMeditationUI === 'function') { try { window.startMeditationUI(); } catch (_) {} }
+                                nightMedStarted = true; nightMedRetries = 0;
+                            } else {
+                                nightMedRetries++;
+                                if (nightMedRetries <= 3) { setStatus('冥想启动失败，重试(' + nightMedRetries + '/3)', 'warn'); await sleep(3000); continue; }
+                                setStatus('冥想启动失败超限，直接等待入夜', 'warn');
+                            }
                         }
-                        await sleep(10000);
-                    } else {
-                        await sleep(10000);
+                    } else if (nightMedStarted) {
+                        // 神识满了，停止冥想干等
+                        await stopMeditationAndRefresh();
+                        nightMedStarted = false;
                     }
+                    await sleep(10000);
                 }
-                if (nightMedStarted) {
-                    setStatus('已入夜，收功', 'run');
-                    await stopMeditationAndRefresh();
-                }
+                if (nightMedStarted) { setStatus('已入夜，收功', 'run'); await stopMeditationAndRefresh(); }
                 setStatus('入夜了，继续探索', 'run');
                 continue;
             }
@@ -3814,6 +4010,7 @@
 
             // 探索前加成（支持失败自动降级）
             try {
+                if (state.autoNirvanaPill) { await ensureNirvanaPill(); }
                 if (state.autoVoidBody && !hasVoidBodyBuff()) {
                     var vOk = await ensureVoidBodyBuff(false);
                     if (!vOk) {
@@ -4234,15 +4431,10 @@
     }
 
     function versionedInstallUrl(release) {
-        var url = String((release && release.downloadUrl) || (release && release.url) || (release && release.sourceUrl) || '').trim();
-        var version = String((release && release.version) || '').trim();
-        if (!url) return '';
-        if (url.indexOf('release.json') >= 0) {
-            url = DEFAULT_UPDATE_MANIFEST_URL.replace(/release\.json(?:[?#].*)?$/, 'lingverse-spirit-cleaner.user.js');
-        }
-        if (version && url.indexOf('v=') < 0) {
-            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + encodeURIComponent(version);
-        }
+        // 始终用 Gitee 国内直连，不用 GitHub
+        var v = String((release && release.version) || '').trim();
+        var url = 'https://gitee.com/wanoujj/lingverse-spirit-cleaner/raw/main/lingverse-spirit-cleaner.user.js';
+        if (v) url += '?v=' + encodeURIComponent(v);
         return url;
     }
 
@@ -4369,16 +4561,13 @@
 
             var newer = compareVersion(release.version, SCRIPT_VERSION) > 0;
             var seenKey = 'lvSpiritCleaner.seenCloudVersion';
-            var remindKey = 'lvSpiritCleaner.lastCloudReminder';
-            var lastReminderAt = Number(localStorage.getItem(remindKey) || 0);
-            var shouldRemind = manual || localStorage.getItem(seenKey) !== release.version || Date.now() - lastReminderAt > CLOUD_UPDATE_REMIND_MS;
-            if (newer && shouldRemind) {
+            // 同一版本已经点过"知道了"就不再弹
+            if (newer && localStorage.getItem(seenKey) === release.version) newer = false;
+            if (newer) {
                 if (!document.getElementById('lvscUpdateModal')) {
                     showUpdateNotice(release, { seenKey: seenKey, kicker: '发现云端新版' });
                 }
-                localStorage.setItem(remindKey, String(Date.now()));
                 setStatus('发现云端新版：' + release.version, 'warn');
-                notifyUser('发现神识清理新版', 'v' + release.version);
                 wecomEnqueue('脚本新版', '神识清理 v' + release.version + ' 已发布，当前 v' + SCRIPT_VERSION);
             } else if (manual) {
                 showUpdateNotice(release, { kicker: newer ? '云端新版' : '云端公告' });
@@ -4685,7 +4874,7 @@
             '#lvscRefreshBtn{width:72px;height:34px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.12)!important}',
             '#lvscMonitorBtn{height:34px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
             '#lvscAutoTrialBtn,#lvscAutoTreasureBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
-            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn,#lvscFarmStartBtn,#lvscStartTalismanBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
+            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn,#lvscFarmStartBtn,#lvscStartTalismanBtn,#lvscSweepStartBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
             '#lvscAutoInscriptionBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
             '#lvscInscriptionStats{font-size:12px;color:#9be7c3}',
             '#lvscInscriptionLog,#lvscRecruitLog{min-height:130px;max-height:190px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px}',
@@ -5012,6 +5201,12 @@
             gameApi().get('/api/game/equipment/current').then(function (res) {
                 if (!res || res.code !== 200 || !Array.isArray(res.data)) return;
                 var items = res.data;
+                // 追加"当前装备"选项（读取游戏打开的铭文界面）
+                var curOpt = document.createElement('option');
+                curOpt.value = '__current__';
+                curOpt.textContent = '当前装备（需打开铭文页）';
+                if (saved === '__current__') curOpt.selected = true;
+                sel.appendChild(curOpt);
                 for (var ei = 0; ei < items.length; ei++) {
                     var item = items[ei];
                     var name = item.name || item.itemName || item.equipmentName || '';
@@ -5028,17 +5223,35 @@
                 if (saved && !sel.value) sel.value = saved;
                 // 恢复上次选中的装备 ID
                 if (sel.value) {
-                    _inscItemId = sel.value;
-                    _inscItemName = sel.options[sel.selectedIndex].textContent || '';
+                    if (sel.value === '__current__') {
+                        _inscItemId = getCurrentInscItemId();
+                        _inscItemName = '当前装备';
+                    } else {
+                        _inscItemId = sel.value;
+                        _inscItemName = sel.options[sel.selectedIndex].textContent || '';
+                    }
                 }
             }).catch(function () {});
         }
         document.getElementById('lvscRefreshEquipment').onclick = refreshEquipmentSelect;
+        function getCurrentInscItemId() {
+            var id = window._lastInscItemId || '';
+            if (!id) {
+                var btns = document.querySelectorAll('[onclick*="drawTenInscription"],[onclick*="drawInscription"],[onclick*="showInscriptionPanel"]');
+                for (var bi = 0; bi < btns.length; bi++) { var m = String(btns[bi].getAttribute('onclick') || '').match(/(\d+)/); if (m) { id = m[1]; break; } }
+            }
+            return id;
+        }
         document.getElementById('lvscInscriptionEquipment').onchange = function () {
-            _inscItemId = this.value;
-            _inscItemName = this.options[this.selectedIndex].textContent || '';
+            if (this.value === '__current__') {
+                _inscItemId = getCurrentInscItemId();
+                _inscItemName = '当前装备';
+            } else {
+                _inscItemId = this.value;
+                _inscItemName = this.options[this.selectedIndex].textContent || '';
+            }
             localStorage.setItem('lvSpiritCleaner.inscriptionEquipmentId', _inscItemId);
-            state.inscriptionQuality = 'any'; // 重置为不限，让用户选择纹纹等级
+            state.inscriptionQuality = 'any';
         };
         setTimeout(refreshEquipmentSelect, 1500);
         document.getElementById('lvscInscriptionQuality').value = String(state.inscriptionQuality);
@@ -5447,14 +5660,27 @@
             function stopBtn(id) { var b = el('button'); b.id = id; b.style.cssText = 'flex:1;height:32px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28);border-radius:6px;cursor:pointer;font-weight:700;display:none'; b.textContent = '停止'; return b; }
             function logDiv(id) { var d = el('div'); d.id = id; d.style.cssText = 'min-height:60px;max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace'; d.textContent = '待命'; return d; }
 
+            // 涅槃丹 checkbox 加到虚空淬体旁边
+            (function() {
+                var vSec = document.querySelector('#lvscAutoVoidBody');
+                if (!vSec) return;
+                var p = vSec.closest('.lvsc-section');
+                if (!p) return;
+                var label = el('label', 'lvsc-check');
+                var cb = el('input'); cb.type = 'checkbox'; cb.id = 'lvscAutoNirvanaPill'; cb.checked = state.autoNirvanaPill;
+                label.appendChild(cb); label.appendChild(document.createTextNode(' 涅槃重生丹'));
+                p.appendChild(label);
+            })();
+
             // ---------- 灵田 → auto ----------
             (function() {
                 var p = document.querySelector('[data-tab-panel="auto"]'); if (!p) return;
                 var s = sec('灵田'), g = el('div', 'lvsc-grid2');
-                g.innerHTML = '<label>种子<select id="lvscFarmSeed"><option value="">点击刷新</option></select></label><label>检测间隔(秒)<input id="lvscFarmInterval" type="number" min="5" step="5" value="30"></label>';
+                g.innerHTML = '<label>种子<select id="lvscFarmSeed"><option value="">点击刷新</option></select></label><label>检测间隔(秒)<input id="lvscFarmInterval" type="number" min="5" step="5" value="' + state.farmInterval + '"></label>';
                 g.querySelector('label').appendChild(rfrBtn('lvscRefreshFarm'));
                 s.appendChild(g);
                 s.innerHTML += '<div class="lvsc-grid2" style="grid-template-columns:1fr 1fr 1fr"><label class="lvsc-check" style="font-size:11px"><input id="lvscFarmAutoHarvest" type="checkbox" checked>收获</label><label class="lvsc-check" style="font-size:11px"><input id="lvscFarmAutoPlant" type="checkbox" checked>种植</label></div>';
+                s.innerHTML += '<div class="lvsc-grid2"><label class="lvsc-check" style="font-size:11px"><input id="lvscFarmExpandEn" type="checkbox">自动开垦</label><label style="font-size:11px">间隔(时)<input id="lvscFarmExpandHours" type="number" min="1" value="' + state.farmExpandHours + '" style="height:24px"></label></div>';
                 var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
                 btnRow.appendChild(actBtn('lvscFarmStartBtn', '开始监控'));
                 btnRow.appendChild(stopBtn('lvscFarmStopBtn'));
@@ -5466,13 +5692,26 @@
             (function() {
                 var p = document.querySelector('[data-tab-panel="craft"]'); if (!p) return;
                 var s = sec('珍宝阁'), g = el('div', 'lvsc-grid2');
-                g.innerHTML = '<label>商品<select id="lvscPavilionItem"><option value="">点击刷新</option></select></label><label>单次数量<input id="lvscPavilionQty" type="number" min="1" max="999" value="99"></label><label>循环次数<input id="lvscPavilionLoop" type="number" min="1" value="10"></label><label>间隔(ms)<input id="lvscPavilionDelay" type="number" min="100" step="100" value="500"></label>';
+                g.innerHTML = '<label>商品<select id="lvscPavilionItem"><option value="">点击刷新</option></select></label><label>单次数量<input id="lvscPavilionQty" type="number" min="1" max="999" value="' + state.pavilionQty + '"></label><label>循环次数<input id="lvscPavilionLoop" type="number" min="1" value="' + state.pavilionLoop + '"></label><label>间隔(ms)<input id="lvscPavilionDelay" type="number" min="100" step="100" value="' + state.pavilionDelay + '"></label>';
                 g.querySelector('label').appendChild(rfrBtn('lvscRefreshPavilion'));
                 s.appendChild(g);
                 var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
                 btnRow.appendChild(goldBtn('lvscAutoPavilionBtn', '开始兑换'));
                 btnRow.appendChild(stopBtn('lvscStopPavilionBtn'));
                 s.appendChild(btnRow); s.appendChild(logDiv('lvscPavilionLog'));
+                p.insertBefore(s, p.firstChild);
+            })();
+
+            // ---------- 扫荡 → craft ----------
+            (function() {
+                var p = document.querySelector('[data-tab-panel="craft"]'); if (!p) return;
+                var s = sec('试练塔扫荡'), g = el('div', 'lvsc-grid2');
+                g.innerHTML = '<label>最大次数<input id="lvscSweepMax" type="number" min="0" value="0" placeholder="0=无限"></label><label>间隔(ms)<input id="lvscSweepDelay" type="number" min="500" step="500" value="3000"></label>';
+                s.appendChild(g);
+                var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
+                btnRow.appendChild(actBtn('lvscSweepStartBtn', '开始扫荡'));
+                btnRow.appendChild(stopBtn('lvscSweepStopBtn'));
+                s.appendChild(btnRow); s.appendChild(logDiv('lvscSweepLog'));
                 p.insertBefore(s, p.firstChild);
             })();
 
@@ -5515,6 +5754,10 @@
                 var fSeed = document.getElementById('lvscFarmSeed');
                 if (fSeed) fSeed.onchange = function() { state.farmSeedId = this.value; state.farmSeedName = this.options[this.selectedIndex].textContent || ''; persistSetting('lvSpiritCleaner.farmSeedId', state.farmSeedId); persistSetting('lvSpiritCleaner.farmSeedName', state.farmSeedName); };
                 var fRef = document.getElementById('lvscRefreshFarm'); if (fRef) fRef.onclick = refreshFarmSeeds;
+                var fExpC = document.getElementById('lvscFarmExpandEn');
+                if (fExpC) { fExpC.checked = state.farmExpandCount >= 0; fExpC.onchange = function() { state.farmExpandCount = this.checked ? 0 : -1; persistSetting('lvSpiritCleaner.farmExpandCount', String(state.farmExpandCount)); }; }
+                var fExpH = document.getElementById('lvscFarmExpandHours');
+                if (fExpH) { fExpH.value = String(state.farmExpandHours); fExpH.onchange = function() { state.farmExpandHours = Math.max(1, Number(this.value) || 1); persistSetting('lvSpiritCleaner.farmExpandHours', String(state.farmExpandHours)); }; }
                 setTimeout(refreshFarmSeeds, 2500);
 
                 // 珍宝阁
@@ -5534,11 +5777,32 @@
                 var pStart = document.getElementById('lvscAutoPavilionBtn');
                 if (pStart) pStart.onclick = function() { if (autoPavilionRunning) return; this.style.display = 'none'; document.getElementById('lvscStopPavilionBtn').style.display = ''; autoPavilionLoop().finally(function() { document.getElementById('lvscAutoPavilionBtn').style.display = ''; document.getElementById('lvscStopPavilionBtn').style.display = 'none'; }); };
                 var pStop = document.getElementById('lvscStopPavilionBtn'); if (pStop) pStop.onclick = stopPavilion;
-                setTimeout(refreshPavilionItems, 2000);
+                // 配置导入导出按钮
+            (function() {
+                var p = document.querySelector('[data-tab-panel="update"]');
+                if (!p) return;
+                var div = el('div'); div.style.cssText = 'display:flex;gap:6px;margin-top:6px';
+                var expBtn = el('button'); expBtn.textContent = '导出配置'; expBtn.className = 'lvsc-action-btn'; expBtn.style.cssText = 'flex:1;height:32px';
+                var impBtn = el('button'); impBtn.textContent = '导入配置'; impBtn.className = 'lvsc-action-btn'; impBtn.style.cssText = 'flex:1;height:32px';
+                div.appendChild(expBtn); div.appendChild(impBtn);
+                p.appendChild(div);
+                expBtn.onclick = exportConfig; impBtn.onclick = importConfig;
+            })();
+
+            setTimeout(refreshPavilionItems, 2000);
 
                 // 批量用符
                 var tStart = document.getElementById('lvscStartTalismanBtn'); if (tStart) tStart.onclick = autoTalismanLoop;
                 var tStop = document.getElementById('lvscStopTalismanBtn'); if (tStop) tStop.onclick = stopTalisman;
+
+                // 涅槃丹
+                var nirvCb = document.getElementById('lvscAutoNirvanaPill');
+                if (nirvCb) { nirvCb.checked = state.autoNirvanaPill; nirvCb.onchange = function() { state.autoNirvanaPill = this.checked; persistSetting('lvSpiritCleaner.autoNirvanaPill', this.checked); }; }
+
+                // 扫荡
+                var swStart = document.getElementById('lvscSweepStartBtn');
+                if (swStart) swStart.onclick = function() { this.style.display = 'none'; document.getElementById('lvscSweepStopBtn').style.display = ''; autoSweepLoop(); };
+                var swStop = document.getElementById('lvscSweepStopBtn'); if (swStop) swStop.onclick = stopSweep;
             }, 100);
         })();} catch(e) { console.warn('feature injection err', e); }
     }
