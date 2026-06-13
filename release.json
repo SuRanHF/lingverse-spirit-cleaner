@@ -1,17 +1,16 @@
 {
-  "version": "1.5.0",
-  "title": "神识清理 v1.5.0 — 8-Tab UI + 批量炼制",
+  "version": "1.5.1",
+  "title": "神识清理 v1.5.1 — 珍宝阁+灵田+制符",
   "notes": [
-    "6tab升级为8tab(探索/战斗/装备/商人/自动/铭文/炼制/更新)",
-    "批量炼丹炼器：选配方设目标，自动买材料，品质分布日志",
-    "装备套装：神识套/战斗套冥想前后自动切换",
-    "自动出狱、微信通知增强"
+    "炼制tab：珍宝阁宗门商品API直购、批量用符、制符类型",
+    "自动tab：灵田自动收获+种植",
+    "动态DOM注入架构"
   ],
-  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.5.0",
+  "downloadUrl": "https://raw.githubusercontent.com/SuRanHF/lingverse-spirit-cleaner/main/lingverse-spirit-cleaner.user.js?v=1.5.1",
   "changelog": [
-    { "version": "1.5.0", "title": "8-Tab UI + 批量炼制", "notes": ["8tab布局", "批量炼制", "装备套装", "自动出狱"] },
+    { "version": "1.5.1", "title": "珍宝阁+灵田+制符", "notes": ["珍宝阁API", "灵田收获", "制符+批量用符"] },
+    { "version": "1.5.0", "title": "8-Tab UI + 批量炼制", "notes": ["8tab布局", "批量炼制", "装备套装"] },
     { "version": "1.4.3", "title": "地图+夜晚+倍率", "notes": ["地图标签截断", "夜晚自冥想", "倍率降档"] },
-    { "version": "1.4.1", "title": "批量炼制+套装", "notes": ["炼丹炼器", "装备套装"] },
     { "version": "1.3.9", "title": "微信通知系统", "notes": ["清理/冥想/死亡通知"] },
     { "version": "1.3.0", "title": "操作逻辑大优化", "notes": ["清理↔监测", "自动切探索"] }
   ]

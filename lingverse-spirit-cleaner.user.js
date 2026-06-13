@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.5.0
+// @version      1.5.1
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -220,7 +220,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.5.0';
+    var SCRIPT_VERSION = '1.5.1';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -264,6 +264,28 @@
         return '未知区域';
     }
     var autoBailRunning = false;
+    var autoFarmRunning = false;
+    var autoPavilionRunning = false;
+    var autoTalismanRunning = false;
+
+    // --- 灵田 ---
+    async function farmOverview() { if (!gameApi()) return null; try { var r = await gameApi().get('/api/game/player-sect/farm/overview?page=1&pageSize=1'); return (r && r.code === 200 && r.data) ? r.data : null; } catch (_) { return null; } }
+    async function farmHarvest() { if (!gameApi()) return false; var r = await gameApi().post('/api/game/player-sect/farm/harvest-all', {}); return !!(r && r.code === 200); }
+    async function farmPlant(seedId) { if (!gameApi() || !seedId) return false; var r = await gameApi().post('/api/game/player-sect/farm/plant-all', { seedId: seedId }); return !!(r && r.code === 200); }
+    async function autoFarmLoop() { if (autoFarmRunning) return; autoFarmRunning = true; updateMeter(); farmLog('灵田监控启动'); while (autoFarmRunning) { try { var data = await farmOverview(); if (!data) { farmLog('获取灵田数据失败'); await sleep(10000); continue; } var mature = data.myMatureCount || 0, idle = data.myIdleCount || 0; if (mature > 0 && state.farmAutoHarvest) { farmLog('收获成熟 ×' + mature); await farmHarvest(); await sleep(500); } if (idle > 0 && state.farmAutoPlant && state.farmSeedId) { farmLog('种植 ' + state.farmSeedName + ' ×' + idle); await farmPlant(state.farmSeedId); await sleep(500); } } catch (e) { farmLog('异常: ' + (e.message || '')); } await sleep(state.farmInterval * 1000); } updateMeter(); }
+    function stopFarm() { autoFarmRunning = false; updateMeter(); }
+    function farmLog(msg) { var log = document.getElementById('lvscFarmLog'); if (!log) return; var t = new Date().toLocaleTimeString(); log.textContent = '[' + t + '] ' + msg + '\n' + (log.textContent || ''); if (log.textContent.length > 4000) log.textContent = log.textContent.substring(0, 4000); }
+
+    // --- 珍宝阁 ---
+    async function fetchPavilionShop() { if (!gameApi()) return []; try { var res = await gameApi().get('/api/game/player-sect/builtin-shop'); return (res && res.code === 200 && Array.isArray(res.data)) ? res.data : []; } catch (_) { return []; } }
+    async function autoPavilionLoop() { if (autoPavilionRunning || running) return; syncSettingsFromUi(); if (!state.pavilionItemId || !gameApi()) { setStatus('请先选择珍宝阁商品', 'warn'); return; } autoPavilionRunning = true; var done = 0, succ = 0; updateMeter(); pavilionLog('开始兑换: ' + state.pavilionItemName + ' 每次' + state.pavilionQty + ' 循环' + state.pavilionLoop); while (autoPavilionRunning && done < state.pavilionLoop) { try { var r = await gameApi().post('/api/game/player-sect/buy-builtin-item', { itemId: state.pavilionItemId, quantity: state.pavilionQty }); if (r && r.code === 200) { succ++; pavilionLog('✓ ' + (done + 1) + '/' + state.pavilionLoop); } else { pavilionLog('✗ ' + (done + 1) + ': ' + ((r && r.message) || '')); } } catch (e) { pavilionLog('✗ 异常: ' + (e.message || '')); } done++; if (done < state.pavilionLoop) await sleep(state.pavilionDelay); } autoPavilionRunning = false; updateMeter(); pavilionLog('完成: ' + succ + '/' + done); setStatus('珍宝阁完成', 'run'); }
+    function stopPavilion() { autoPavilionRunning = false; updateMeter(); }
+    function pavilionLog(msg) { var log = document.getElementById('lvscPavilionLog'); if (!log) return; var t = new Date().toLocaleTimeString(); log.textContent = '[' + t + '] ' + msg + '\n' + (log.textContent || ''); if (log.textContent.length > 4000) log.textContent = log.textContent.substring(0, 4000); }
+
+    // --- 批量用符 ---
+    function talismanLog(msg) { var log = document.getElementById('lvscTalismanLog'); if (!log) return; var t = new Date().toLocaleTimeString(); log.textContent = '[' + t + '] ' + msg + '\n' + (log.textContent || ''); if (log.textContent.length > 4000) log.textContent = log.textContent.substring(0, 4000); }
+    async function autoTalismanLoop() { if (autoTalismanRunning || !gameApi()) return; autoTalismanRunning = true; var batchSize = Math.max(1, Number(document.getElementById('lvscTalismanBatch').value) || 10); var loops = Math.max(1, Number(document.getElementById('lvscTalismanLoops').value) || 5); var delay = Math.max(500, Number(document.getElementById('lvscTalismanDelay').value) || 1500); var type = document.getElementById('lvscTalismanType').value; document.getElementById('lvscStartTalismanBtn').style.display = 'none'; document.getElementById('lvscStopTalismanBtn').style.display = ''; updateMeter(); talismanLog('开始: 每次' + batchSize + ' 循环' + loops); var used = 0; for (var i = 0; i < loops && autoTalismanRunning; i++) { try { var invRes = await gameApi().get('/api/game/inventory'); if (!invRes || invRes.code !== 200 || !Array.isArray(invRes.data)) { talismanLog('获取背包失败'); break; } var items = invRes.data.filter(function(item) { var tid = (item.templateId || '').toLowerCase(); if (!tid || tid.indexOf('talisman_') < 0) return false; if (item.isLocked || item.isEquipped) return false; if (type === 'stealth' && tid.indexOf('stealth') < 0) return false; if (type === 'combat' && tid.indexOf('stealth') >= 0) return false; return Number(item.quantity || item.count || 0) >= 1; }); if (!items.length) { talismanLog('没有可用符篆'); break; } var item = items[0]; var itemId = item.id || item.itemId || item.instanceId; var count = Math.min(batchSize, Number(item.quantity || item.count || 1)); var useRes = await gameApi().post('/api/game/use-item', { itemId: itemId, quantity: count }); if (useRes && useRes.code === 200) { used += count; talismanLog('✓ ' + (i + 1) + '/' + loops + ' ×' + count + ' (' + used + ')'); } else { talismanLog('✗ 失败: ' + ((useRes && useRes.message) || '')); } } catch (e) { talismanLog('✗ ' + (e.message || '')); } if (i < loops - 1) await sleep(delay); } autoTalismanRunning = false; document.getElementById('lvscStartTalismanBtn').style.display = ''; document.getElementById('lvscStopTalismanBtn').style.display = 'none'; updateMeter(); talismanLog('完成: ' + used + '张'); }
+    function stopTalisman() { autoTalismanRunning = false; }
 
     // 装备套装切换
     async function captureEquipSet(setKey) {
@@ -386,6 +408,11 @@
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
         {
+            version: '1.5.1',
+            title: '珍宝阁+灵田+制符+批量用符',
+            notes: ['炼制tab新增珍宝阁(宗门商品API直购)和批量用符(按类型批量使用符篆)。', '炼制类型新增制符。自动tab新增灵田自动收获+种植。', '动态DOM注入架构，不动HTML字符串，好维护。']
+        },
+        {
             version: '1.5.0',
             title: '8-Tab UI + 批量炼制 + 装备套装',
             notes: ['6tab升级为8tab(探索/战斗/装备/商人/自动/铭文/炼制/更新)。', '批量炼丹炼器：选配方设目标，自动买材料，品质分布日志。', '装备套装：神识套/战斗套冥想前后自动切换。', '自动出狱：ImmortalModule.bail()。微信通知增强。']
@@ -492,6 +519,16 @@
         autoMasterRequests: localStorage.getItem('lvSpiritCleaner.autoMasterRequests') !== '0',
         autoBail: localStorage.getItem('lvSpiritCleaner.autoBail') !== '0',
         bailMethod: localStorage.getItem('lvSpiritCleaner.bailMethod') || 'stone',
+        farmAutoHarvest: localStorage.getItem('lvSpiritCleaner.farmAutoHarvest') !== '0',
+        farmAutoPlant: localStorage.getItem('lvSpiritCleaner.farmAutoPlant') !== '0',
+        farmSeedId: localStorage.getItem('lvSpiritCleaner.farmSeedId') || '',
+        farmSeedName: localStorage.getItem('lvSpiritCleaner.farmSeedName') || '',
+        farmInterval: readNumber('lvSpiritCleaner.farmInterval', 30),
+        pavilionItemId: localStorage.getItem('lvSpiritCleaner.pavilionItemId') || '',
+        pavilionItemName: localStorage.getItem('lvSpiritCleaner.pavilionItemName') || '',
+        pavilionQty: readNumber('lvSpiritCleaner.pavilionQty', 99),
+        pavilionLoop: readNumber('lvSpiritCleaner.pavilionLoop', 10),
+        pavilionDelay: readNumber('lvSpiritCleaner.pavilionDelay', 500),
         equipSwapEnabled: localStorage.getItem('lvSpiritCleaner.equipSwapEnabled') === '1',
         spiritEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.spiritEquipIds') || '[]'),
         combatEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.combatEquipIds') || '[]'),
@@ -4648,7 +4685,7 @@
             '#lvscRefreshBtn{width:72px;height:34px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.12)!important}',
             '#lvscMonitorBtn{height:34px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
             '#lvscAutoTrialBtn,#lvscAutoTreasureBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
-            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
+            '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn,#lvscFarmStartBtn,#lvscStartTalismanBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
             '#lvscAutoInscriptionBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
             '#lvscInscriptionStats{font-size:12px;color:#9be7c3}',
             '#lvscInscriptionLog,#lvscRecruitLog{min-height:130px;max-height:190px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px}',
@@ -5399,6 +5436,111 @@
                 });
             });
         })();}catch(e){console.warn('tab content migrate err',e);}
+
+        // ====== 动态功能注入 ======
+        try {(function() {
+            function el(t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h) e.innerHTML = h; return e; }
+            function sec(title) { var s = el('div', 'lvsc-section'); s.appendChild(el('div', 'lvsc-section-title-row', '<span>' + title + '</span>')); return s; }
+            function rfrBtn(id) { var b = el('button'); b.id = id; b.style.cssText = 'height:29px;padding:0 8px;margin-left:4px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1);border-radius:6px;font-size:11px;cursor:pointer'; b.textContent = '刷新'; return b; }
+            function goldBtn(id, text) { var b = el('button'); b.id = id; b.style.cssText = 'flex:1;height:34px;background:#dbb970;color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700'; b.textContent = text; return b; }
+            function actBtn(id, text) { var b = el('button'); b.id = id; b.className = 'lvsc-action-btn'; b.style.cssText = 'flex:1;height:32px'; b.textContent = text; return b; }
+            function stopBtn(id) { var b = el('button'); b.id = id; b.style.cssText = 'flex:1;height:32px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28);border-radius:6px;cursor:pointer;font-weight:700;display:none'; b.textContent = '停止'; return b; }
+            function logDiv(id) { var d = el('div'); d.id = id; d.style.cssText = 'min-height:60px;max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace'; d.textContent = '待命'; return d; }
+
+            // ---------- 灵田 → auto ----------
+            (function() {
+                var p = document.querySelector('[data-tab-panel="auto"]'); if (!p) return;
+                var s = sec('灵田'), g = el('div', 'lvsc-grid2');
+                g.innerHTML = '<label>种子<select id="lvscFarmSeed"><option value="">点击刷新</option></select></label><label>检测间隔(秒)<input id="lvscFarmInterval" type="number" min="5" step="5" value="30"></label>';
+                g.querySelector('label').appendChild(rfrBtn('lvscRefreshFarm'));
+                s.appendChild(g);
+                s.innerHTML += '<div class="lvsc-grid2" style="grid-template-columns:1fr 1fr 1fr"><label class="lvsc-check" style="font-size:11px"><input id="lvscFarmAutoHarvest" type="checkbox" checked>收获</label><label class="lvsc-check" style="font-size:11px"><input id="lvscFarmAutoPlant" type="checkbox" checked>种植</label></div>';
+                var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
+                btnRow.appendChild(actBtn('lvscFarmStartBtn', '开始监控'));
+                btnRow.appendChild(stopBtn('lvscFarmStopBtn'));
+                s.appendChild(btnRow); s.appendChild(logDiv('lvscFarmLog'));
+                p.insertBefore(s, p.firstChild);
+            })();
+
+            // ---------- 珍宝阁 → craft ----------
+            (function() {
+                var p = document.querySelector('[data-tab-panel="craft"]'); if (!p) return;
+                var s = sec('珍宝阁'), g = el('div', 'lvsc-grid2');
+                g.innerHTML = '<label>商品<select id="lvscPavilionItem"><option value="">点击刷新</option></select></label><label>单次数量<input id="lvscPavilionQty" type="number" min="1" max="999" value="99"></label><label>循环次数<input id="lvscPavilionLoop" type="number" min="1" value="10"></label><label>间隔(ms)<input id="lvscPavilionDelay" type="number" min="100" step="100" value="500"></label>';
+                g.querySelector('label').appendChild(rfrBtn('lvscRefreshPavilion'));
+                s.appendChild(g);
+                var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
+                btnRow.appendChild(goldBtn('lvscAutoPavilionBtn', '开始兑换'));
+                btnRow.appendChild(stopBtn('lvscStopPavilionBtn'));
+                s.appendChild(btnRow); s.appendChild(logDiv('lvscPavilionLog'));
+                p.insertBefore(s, p.firstChild);
+            })();
+
+            // ---------- 制符+批量用符 → craft ----------
+            (function() {
+                var p = document.querySelector('[data-tab-panel="craft"]'); if (!p) return;
+                var s = sec('批量用符'), g = el('div', 'lvsc-grid2');
+                g.innerHTML = '<label>符篆类型<select id="lvscTalismanType"><option value="all">全部</option><option value="stealth">隐秘符</option><option value="combat">战斗符</option></select></label><label>每次几张<input id="lvscTalismanBatch" type="number" min="1" value="10"></label><label>循环次数<input id="lvscTalismanLoops" type="number" min="1" value="5"></label><label>间隔(ms)<input id="lvscTalismanDelay" type="number" min="500" step="100" value="1500"></label>';
+                s.appendChild(g);
+                var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
+                btnRow.appendChild(actBtn('lvscStartTalismanBtn', '开始用符'));
+                btnRow.appendChild(stopBtn('lvscStopTalismanBtn'));
+                s.appendChild(btnRow); s.appendChild(logDiv('lvscTalismanLog'));
+                p.insertBefore(s, p.firstChild);
+                // 炼制类型加"制符"
+                var ct = document.getElementById('lvscCraftType');
+                if (ct && !ct.querySelector('option[value="talisman"]')) { var o = document.createElement('option'); o.value = 'talisman'; o.textContent = '制符'; ct.appendChild(o); }
+            })();
+
+            // 绑定新元素的事件（延迟执行避免ID未注册）
+            setTimeout(function() {
+                // 灵田
+                var fsStart = document.getElementById('lvscFarmStartBtn');
+                if (fsStart) fsStart.onclick = function() { this.style.display = 'none'; document.getElementById('lvscFarmStopBtn').style.display = ''; autoFarmLoop(); };
+                var fsStop = document.getElementById('lvscFarmStopBtn');
+                if (fsStop) fsStop.onclick = function() { stopFarm(); document.getElementById('lvscFarmStartBtn').style.display = ''; this.style.display = 'none'; };
+                var fIntv = document.getElementById('lvscFarmInterval');
+                if (fIntv) fIntv.onchange = function() { state.farmInterval = Math.max(5, Number(this.value)||30); persistSetting('lvSpiritCleaner.farmInterval', String(state.farmInterval)); };
+                var fHarv = document.getElementById('lvscFarmAutoHarvest');
+                if (fHarv) { fHarv.checked = state.farmAutoHarvest; fHarv.onchange = function() { state.farmAutoHarvest = this.checked; persistSetting('lvSpiritCleaner.farmAutoHarvest', this.checked); }; }
+                var fPlant = document.getElementById('lvscFarmAutoPlant');
+                if (fPlant) { fPlant.checked = state.farmAutoPlant; fPlant.onchange = function() { state.farmAutoPlant = this.checked; persistSetting('lvSpiritCleaner.farmAutoPlant', this.checked); }; }
+                async function refreshFarmSeeds() {
+                    var sel = document.getElementById('lvscFarmSeed'); if (!sel) return;
+                    sel.innerHTML = '<option value="">加载中...</option>';
+                    var data = await farmOverview();
+                    sel.innerHTML = '<option value="">选择种子</option>';
+                    if (data && data.seeds) for (var fi = 0; fi < data.seeds.length; fi++) { var s = data.seeds[fi]; if (s.seedId) sel.innerHTML += '<option value="' + s.seedId + '"' + (state.farmSeedId === s.seedId ? ' selected' : '') + '>' + (s.seedName || s.seedId) + '</option>'; }
+                }
+                var fSeed = document.getElementById('lvscFarmSeed');
+                if (fSeed) fSeed.onchange = function() { state.farmSeedId = this.value; state.farmSeedName = this.options[this.selectedIndex].textContent || ''; persistSetting('lvSpiritCleaner.farmSeedId', state.farmSeedId); persistSetting('lvSpiritCleaner.farmSeedName', state.farmSeedName); };
+                var fRef = document.getElementById('lvscRefreshFarm'); if (fRef) fRef.onclick = refreshFarmSeeds;
+                setTimeout(refreshFarmSeeds, 2500);
+
+                // 珍宝阁
+                async function refreshPavilionItems() {
+                    var sel = document.getElementById('lvscPavilionItem'); if (!sel) return;
+                    sel.innerHTML = '<option value="">加载中...</option>';
+                    var items = await fetchPavilionShop();
+                    sel.innerHTML = '<option value="">选择商品</option>';
+                    for (var pi = 0; pi < items.length; pi++) { var it = items[pi]; var id = String(it.templateId || it.itemId || it.id || ''); var name = it.name || it.itemName || ''; if (id && name) sel.innerHTML += '<option value="' + id + '"' + (state.pavilionItemId === id ? ' selected' : '') + '>' + name + '</option>'; }
+                }
+                var pItem = document.getElementById('lvscPavilionItem');
+                if (pItem) pItem.onchange = function() { state.pavilionItemId = this.value; state.pavilionItemName = this.options[this.selectedIndex].textContent || ''; persistSetting('lvSpiritCleaner.pavilionItemId', state.pavilionItemId); persistSetting('lvSpiritCleaner.pavilionItemName', state.pavilionItemName); };
+                var pRef = document.getElementById('lvscRefreshPavilion'); if (pRef) pRef.onclick = refreshPavilionItems;
+                var pQty = document.getElementById('lvscPavilionQty'); if (pQty) { pQty.value = String(state.pavilionQty); pQty.onchange = function() { state.pavilionQty = Math.max(1, Number(this.value)||99); persistSetting('lvSpiritCleaner.pavilionQty', String(state.pavilionQty)); }; }
+                var pLoop = document.getElementById('lvscPavilionLoop'); if (pLoop) { pLoop.value = String(state.pavilionLoop); pLoop.onchange = function() { state.pavilionLoop = Math.max(1, Number(this.value)||10); persistSetting('lvSpiritCleaner.pavilionLoop', String(state.pavilionLoop)); }; }
+                var pDelay = document.getElementById('lvscPavilionDelay'); if (pDelay) { pDelay.value = String(state.pavilionDelay); pDelay.onchange = function() { state.pavilionDelay = Math.max(100, Number(this.value)||500); persistSetting('lvSpiritCleaner.pavilionDelay', String(state.pavilionDelay)); }; }
+                var pStart = document.getElementById('lvscAutoPavilionBtn');
+                if (pStart) pStart.onclick = function() { if (autoPavilionRunning) return; this.style.display = 'none'; document.getElementById('lvscStopPavilionBtn').style.display = ''; autoPavilionLoop().finally(function() { document.getElementById('lvscAutoPavilionBtn').style.display = ''; document.getElementById('lvscStopPavilionBtn').style.display = 'none'; }); };
+                var pStop = document.getElementById('lvscStopPavilionBtn'); if (pStop) pStop.onclick = stopPavilion;
+                setTimeout(refreshPavilionItems, 2000);
+
+                // 批量用符
+                var tStart = document.getElementById('lvscStartTalismanBtn'); if (tStart) tStart.onclick = autoTalismanLoop;
+                var tStop = document.getElementById('lvscStopTalismanBtn'); if (tStop) tStop.onclick = stopTalisman;
+            }, 100);
+        })();} catch(e) { console.warn('feature injection err', e); }
     }
 
     function waitForGame() {
