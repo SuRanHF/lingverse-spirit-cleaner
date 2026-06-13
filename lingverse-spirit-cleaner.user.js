@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.4.3
+// @version      1.5.0
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/game.html*
 // @match        http://ling.muge.info/game.html*
@@ -220,7 +220,7 @@
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.4.3';
+    var SCRIPT_VERSION = '1.5.0';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -253,10 +253,15 @@
         return realm + ' ' + pct.toFixed(1) + '%';
     }
     function getCurrentAreaName() {
-        var a = findGameAreaOptions();
-        // 从 game state 推断当前区域
         var p = getPlayer() || {};
-        return p.currentArea || p.area || p.zone || (a.length > 0 ? a[0] : '');
+        // player 对象的区域字段
+        var name = p.currentArea || p.area || p.zone || p.location || p.currentZone || '';
+        if (name && !/^[a-zA-Z]+$/.test(name)) return name;
+        // 兜底：从页面读取
+        var el = document.getElementById('currentAreaName') || document.querySelector('.current-area,.area-name,.zone-name');
+        if (el) name = (el.textContent || '').trim();
+        if (name && name.length < 20) return name;
+        return '未知区域';
     }
     var autoBailRunning = false;
 
@@ -292,33 +297,35 @@
         if (autoBailRunning || !gameApi()) return;
         autoBailRunning = true;
         try {
-            var infoRes = await gameApi().get('/api/game/anti-cheat/bail-info');
-            if (!infoRes || infoRes.code !== 200 || !infoRes.data) {
-                if (manual) setStatus('禁闭状态查询失败', 'warn');
+            // 检测是否在监狱
+            var stateRes = await gameApi().get('/api/game/immortal/state');
+            if (!stateRes || stateRes.code !== 200 || !stateRes.data) {
+                if (manual) setStatus('无法获取仙庭状态', 'warn');
                 return;
             }
-            var info = infoRes.data;
-            if (!info.isJailed) {
-                if (manual) setStatus('当前未处于天道禁闭', 'run');
+            var immState = stateRes.data;
+            // 被关时 canBailWithStone 或 canBailWithMaterial 存在
+            var canBailS = immState.canBailWithStone;
+            var canBailM = immState.canBailWithMaterial;
+            if (!canBailS && !canBailM) {
+                if (manual) setStatus('当前未被禁闭', 'run');
                 return;
             }
-            var cost = Math.max(1, parseInt(info.bailCost || 1, 10));
-            var adPoints = Math.max(0, parseInt(info.adPoints || 0, 10));
-            if (adPoints < cost) {
-                setStatus('仙缘不足，需 ' + cost + ' 点，当前 ' + adPoints + ' 点', 'warn');
-                return;
-            }
-            setStatus('自动保释，消耗 ' + cost + ' 仙缘', 'run');
-            var bailRes = await gameApi().post('/api/game/anti-cheat/bail', {});
+            var method = state.bailMethod || 'stone';
+            if (method === 'stone' && !canBailS) method = 'material';
+            if (!canBailM && !canBailS) { setStatus('保释资源不足', 'warn'); return; }
+            var label = method === 'material' ? '仙材保释' : '灵石保释';
+            setStatus('自动' + label + '...', 'run');
+            var bailRes = await gameApi().post('/api/game/immortal/bail', { method: method });
             if (bailRes && bailRes.code === 200) {
-                setStatus('已自动保释出狱', 'run');
-                wecomEnqueue('自动出狱', '消耗 ' + cost + ' 仙缘保释');
+                setStatus(label + '成功', 'run');
+                wecomEnqueue('自动出狱', label);
                 await refreshPlayer();
             } else {
-                setStatus('保释失败: ' + ((bailRes && bailRes.message) || '未知'), 'warn');
+                if (manual) setStatus(label + '失败: ' + ((bailRes && bailRes.message) || ''), 'warn');
             }
         } catch (err) {
-            if (manual) setStatus('自动出狱异常: ' + (err.message || ''), 'warn');
+            if (manual) setStatus('自动出狱异常', 'warn');
         } finally {
             autoBailRunning = false;
         }
@@ -378,6 +385,11 @@
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
+        {
+            version: '1.5.0',
+            title: '8-Tab UI + 批量炼制 + 装备套装',
+            notes: ['6tab升级为8tab(探索/战斗/装备/商人/自动/铭文/炼制/更新)。', '批量炼丹炼器：选配方设目标，自动买材料，品质分布日志。', '装备套装：神识套/战斗套冥想前后自动切换。', '自动出狱：ImmortalModule.bail()。微信通知增强。']
+        },
         {
             version: '1.4.3',
             title: '地图+夜晚+倍率+状态栏',
@@ -479,6 +491,7 @@
         recruitIntervalMs: readNumber('lvSpiritCleaner.recruitIntervalMs', 5000),
         autoMasterRequests: localStorage.getItem('lvSpiritCleaner.autoMasterRequests') !== '0',
         autoBail: localStorage.getItem('lvSpiritCleaner.autoBail') !== '0',
+        bailMethod: localStorage.getItem('lvSpiritCleaner.bailMethod') || 'stone',
         equipSwapEnabled: localStorage.getItem('lvSpiritCleaner.equipSwapEnabled') === '1',
         spiritEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.spiritEquipIds') || '[]'),
         combatEquipIds: JSON.parse(localStorage.getItem('lvSpiritCleaner.combatEquipIds') || '[]'),
@@ -1150,7 +1163,8 @@
             }
             setStatus('已引渡归来，继续流程', 'run');
             var toArea = state.reviveExploreArea || '原地';
-            wecomEnqueue('🔄 已引渡归来', '前往：' + toArea + '\n将恢复 HP/MP 后继续清理');
+            var s = getPlayerHpMp();
+            wecomEnqueue('🔄 已引渡归来', '前往：' + toArea + '\n血量 ' + s.hp + '/' + s.maxHp + ' 灵力 ' + s.mp + '/' + s.maxMp + '\n将恢复后继续清理');
             return true;
         } catch (err2) {
             console.warn('[LingVerse Spirit Cleaner] death revive failed', err2);
@@ -1281,11 +1295,10 @@
         if (!state.useAdvancedMeditate || !gameApi()) return false;
         try {
             setStatus('尝试仙缘高级冥想', 'run');
-            var adBefore = 0;
-            try {
-                var adRes = await gameApi().get('/api/master/overview');
-                adBefore = (adRes && adRes.data && adRes.data.adPoints) || 0;
-            } catch (_) {}
+            var adBefore = Number((getPlayer() || {}).adPoints || 0);
+            if (!adBefore) {
+                try { var adRes = await gameApi().get('/api/master/overview'); adBefore = (adRes && adRes.data && adRes.data.adPoints) || 0; } catch (_) {}
+            }
             var res = await gameApi().post('/api/game/meditate/instant', { grade: 2 });
             if (!res || res.code !== 200) {
                 setStatus('高级冥想失败，转普通冥想：' + ((res && res.message) || '未知原因'), 'warn');
@@ -1296,11 +1309,8 @@
             }
             if (typeof window.loadGameLogs === 'function') window.loadGameLogs();
             await refreshPlayer();
-            var adAfter = 0;
-            try {
-                var adRes2 = await gameApi().get('/api/master/overview');
-                adAfter = (adRes2 && adRes2.data && adRes2.data.adPoints) || 0;
-            } catch (_) {}
+            await refreshPlayer();
+            var adAfter = Number((getPlayer() || {}).adPoints || 0);
             setStatus('高级冥想已完成', 'run');
             wecomEnqueue('✨ 高级冥想', '使用前仙缘：' + adBefore + '\n使用后仙缘：' + adAfter + '\n神识：已恢复');
             return true;
@@ -1313,6 +1323,10 @@
 
     async function meditateUntilSpiritFull() {
         if (!state.autoMeditate || !gameApi()) return false;
+        // 清除旧的冥想UI残留
+        forceClearMeditationUi();
+        window._meditationActive = false;
+        window._meditationInProgress = false;
         var info = getSpiritInfo();
         if (!info.player || info.player.isDead || window.playerDead) return false;
         var targetSpirit = getMeditateTargetSpirit(info);
@@ -1497,7 +1511,9 @@
             setStatus('坊市购买' + rarityName(rarity) + '虚空淬体丹x' + buyQty, 'run');
             var res = await gameApi().post('/api/game/market/buy', { listingId: listingId, quantity: buyQty });
             if (!res || res.code !== 200) {
-                toast('坊市购买失败：' + ((res && res.message) || '未知错误'));
+                var errMsg = (res && res.message) || '';
+                if (/交易.*上限|上限.*交易|已达.*上限|每日.*次/.test(errMsg)) continue; // 换下一个卖家
+                toast('坊市购买失败：' + errMsg);
                 return false;
             }
             remaining -= buyQty;
@@ -1627,7 +1643,9 @@
             setStatus('坊市购买隐秘符x' + buyQty, 'run');
             var res = await gameApi().post('/api/game/market/buy', { listingId: listingId, quantity: buyQty });
             if (!res || res.code !== 200) {
-                toast('隐秘符购买失败：' + ((res && res.message) || '未知错误'));
+                var errMsg2 = (res && res.message) || '';
+                if (/交易.*上限|上限.*交易|已达.*上限|每日.*次/.test(errMsg2)) continue;
+                toast('隐秘符购买失败：' + errMsg2);
                 return false;
             }
             remaining -= buyQty;
@@ -4338,8 +4356,8 @@
     }
 
     function activatePanelTab(tabName) {
-        var allowed = ['basic', 'merchant', 'combat', 'flow', 'inscription', 'update'];
-        if (allowed.indexOf(tabName) < 0) tabName = 'basic';
+        var allowed = ['explore','fight','equip','merchant','auto','inscription','craft','update','basic','combat','flow'];
+        if (allowed.indexOf(tabName) < 0) tabName = 'explore';
         Array.prototype.forEach.call(document.querySelectorAll('#lvscTabs .lvsc-tab'), function (button) {
             var active = button.getAttribute('data-tab') === tabName;
             button.classList.toggle('lvsc-active', active);
@@ -4588,7 +4606,7 @@
             '#lvscPanel input[type=checkbox]{margin-right:6px}',
             '#lvscPanel select option{background:#17141d;color:#fff}',
             '.lvsc-meter{display:grid;gap:7px;padding:9px;border:1px solid rgba(216,180,254,.2);border-radius:8px;background:rgba(216,180,254,.05)}',
-            '#lvscTabs{position:sticky;top:-12px;z-index:3;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin:-2px -2px 0;padding:4px 2px 6px;background:rgba(17,20,29,.96);border-bottom:1px solid rgba(255,255,255,.08)}',
+            '#lvscTabs{position:sticky;top:-12px;z-index:3;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;margin:-2px -2px 0;padding:4px 2px 6px;background:rgba(17,20,29,.96);border-bottom:1px solid rgba(255,255,255,.08)}',
             '.lvsc-tab{height:30px;padding:0 6px;background:rgba(255,255,255,.06);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
             '.lvsc-tab.lvsc-active{background:#dbb970;color:#17141d;border-color:#dbb970!important}',
             '.lvsc-category{display:grid;gap:9px;min-width:0;padding:10px;border:1px solid rgba(219,185,112,.16);border-radius:9px;background:rgba(255,255,255,.025)}',
@@ -4656,7 +4674,7 @@
             '.lvsc-update-link,#lvscUpdateCopyBtn{display:flex;align-items:center;justify-content:center;min-height:34px;border-radius:7px;text-decoration:none;border:1px solid rgba(216,180,254,.28)!important;background:rgba(216,180,254,.12);color:#d8b4fe;font-weight:700}',
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',
             '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;z-index:5;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
-            '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}#lvscTabs{grid-template-columns:repeat(3,minmax(0,1fr))}.lvsc-tab{font-size:11px}}',
+            '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}#lvscTabs{grid-template-columns:repeat(4,minmax(0,1fr))}.lvsc-tab{font-size:11px}}',
             '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscTabs{top:-10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
         ].join('');
         document.head.appendChild(style);
@@ -4670,14 +4688,16 @@
             '<div id="lvscBody">' +
             '<div class="lvsc-meter"><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
             '<div id="lvscTabs">' +
-            '<button class="lvsc-tab" data-tab="basic">基础</button>' +
-            '<button class="lvsc-tab" data-tab="merchant">商人护道</button>' +
-            '<button class="lvsc-tab" data-tab="combat">妖兽恢复</button>' +
-            '<button class="lvsc-tab" data-tab="flow">自动流程</button>' +
+            '<button class="lvsc-tab" data-tab="explore">探索</button>' +
+            '<button class="lvsc-tab" data-tab="fight">战斗</button>' +
+            '<button class="lvsc-tab" data-tab="equip">装备</button>' +
+            '<button class="lvsc-tab" data-tab="merchant">商人</button>' +
+            '<button class="lvsc-tab" data-tab="auto">自动</button>' +
             '<button class="lvsc-tab" data-tab="inscription">铭文</button>' +
+            '<button class="lvsc-tab" data-tab="craft">炼制</button>' +
             '<button class="lvsc-tab" data-tab="update">更新</button>' +
             '</div>' +
-            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="basic">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="explore">' +
             '<div class="lvsc-category-title">基础清理</div>' +
             '<div class="lvsc-field-grid">' +
             '<label>保留神识<input id="lvscReserve" type="number" min="0" step="1"></label>' +
@@ -4688,11 +4708,14 @@
             '</div>' +
             '</div>' +
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="merchant">' +
-            '<div class="lvsc-category-title">护道与商人</div>' +
+            '<div class="lvsc-section"><div class="lvsc-section-title-row"><span>护道</span></div>' +
             '<div class="lvsc-field-grid">' +
             '<label>护道方式<select id="lvscHireMode"><option value="cheapest">最低价</option><option value="together">合击</option><option value="alone">单独</option></select></label>' +
             '<label>灵石上限<input id="lvscHireMaxFee" type="number" min="0" step="1" title="填 0 表示不限"></label>' +
             '<label>护道重试上限<input id="lvscHireRetryLimit" type="number" min="1" max="10" step="1"></label>' +
+            '</div></div>' +
+            '<div class="lvsc-section"><div class="lvsc-section-title-row"><span>商人购买</span></div>' +
+            '<div class="lvsc-field-grid">' +
             '<label>商人策略<select id="lvscMerchantMode"><option value="legend">传说才买</option><option value="custom">按条件购买</option><option value="leave">直接离去</option></select></label>' +
             '<label>商品关键词<input id="lvscMerchantKeyword" type="text" placeholder="多个用空格或逗号隔开"></label>' +
             '<label>高价阈值(灵石)<input id="lvscMerchantMaxPrice" type="number" min="0" step="1" title="填 0 表示不限"></label>' +
@@ -4702,7 +4725,8 @@
             '</div>' +
             '<div class="lvsc-help">传说才买会固定要求传说品质；按条件购买会按关键词和价格筛选，品质优先开启后先买更高品质。</div>' +
             '</div>' +
-            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="combat">' +
+            '</div>' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="fight">' +
             '<div class="lvsc-category-title">妖兽与恢复</div>' +
             '<div class="lvsc-card-grid">' +
             '<div class="lvsc-section">' +
@@ -4767,7 +4791,8 @@
             '<div id="lvscCraftLog" style="min-height:80px;max-height:150px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace;">待命</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
-            '<div class="lvsc-section-title-row"><span>自动出狱</span><label class="lvsc-check"><input id="lvscAutoBail" type="checkbox">检测禁闭并消耗仙缘保释</label></div>' +
+            '<div class="lvsc-section-title-row"><span>自动出狱</span><label class="lvsc-check"><input id="lvscAutoBail" type="checkbox">检测禁闭并保释</label></div>' +
+            '<div class="lvsc-grid2"><label>保释方式<select id="lvscBailMethod"><option value="stone">灵石保释</option><option value="material">仙材保释</option></select></label></div>' +
             '<div class="lvsc-help">每30秒检测一次是否被天道禁闭，仙缘足够时自动保释出狱。</div>' +
             '</div>' +
             '<div class="lvsc-section">' +
@@ -4782,7 +4807,7 @@
             '</div>' +
             '</div>' +
             '</div>' +
-            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="flow">' +
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="auto">' +
             '<div class="lvsc-category-title">自动流程</div>' +
             '<div class="lvsc-card-grid">' +
             '<div class="lvsc-section">' +
@@ -4829,6 +4854,14 @@
             '<div class="lvsc-help">无法可靠检测隐秘符加成时，以使用接口成功为准；成功后会按间隔等待，避免每次探索都消耗。</div>' +
             '</div>' +
             '</div>' +
+            '</div>' +
+            // —— 装备 tab ——
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="equip">' +
+            '<div class="lvsc-section"><div class="lvsc-section-title">装备</div><div class="lvsc-help">从战斗&恢复面板迁移中...</div></div>' +
+            '</div>' +
+            // —— 炼制 tab ——
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="craft">' +
+            '<div class="lvsc-section"><div class="lvsc-section-title">炼制</div><div class="lvsc-help">从自动流程面板迁移中...</div></div>' +
             '</div>' +
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="inscription">' +
             '<div class="lvsc-category-title">铭文洗练</div>' +
@@ -5071,7 +5104,7 @@
             wecomEnqueue('🧘 冥想中', '预计收工神识：120/200\n还需约：5分钟');
             wecomEnqueue('✨ 高级冥想', '使用前仙缘：125\n使用后仙缘：123\n神识：已恢复');
             wecomEnqueue('💀 角色陨落', '位置：青云城\n正在尝试引渡复活...');
-            wecomEnqueue('🔄 已引渡归来', '前往：灵溪村\n将恢复 HP/MP 后继续清理');
+            wecomEnqueue('🔄 已引渡归来', '前往：灵溪村\n血量 350/1200 灵力 80/500\n将恢复后继续清理');
             wecomEnqueue('✅ 清理结束', '运行时长：120分钟\n探索次数：342\n遭遇妖兽：47次\n死亡次数：1');
             setStatus('测试通知已发送', 'run');
         };
@@ -5122,6 +5155,8 @@
             state.autoBail = this.checked;
             persistSetting('lvSpiritCleaner.autoBail', state.autoBail);
         };
+        document.getElementById('lvscBailMethod').value = state.bailMethod;
+        document.getElementById('lvscBailMethod').onchange = function () { state.bailMethod = this.value; persistSetting('lvSpiritCleaner.bailMethod', this.value); };
         setInterval(function () { if (state.autoBail) checkAndAutoBail(false); }, 30000);
         // 屏蔽更新 checkbox
         document.getElementById('lvscUpdateMuted').checked = localStorage.getItem('lvSpiritCleaner.updateMuted') === '1';
@@ -5317,7 +5352,7 @@
         onNum('lvscHiddenCharmRetryMs', 'hiddenCharmRetryMs', 3000);
 
         setPanelCollapsed(panel, localStorage.getItem('lvSpiritCleaner.collapsed') === '1');
-        activatePanelTab(localStorage.getItem('lvSpiritCleaner.activeTab') || 'basic');
+        activatePanelTab(localStorage.getItem('lvSpiritCleaner.activeTab') || 'explore');
         refreshPlayer();
         showBuiltinReleaseOnce();
         hookAntiCheatAutoSolve();
@@ -5329,6 +5364,41 @@
         if (state.autoRecruit || state.wecomNotify) {
             setTimeout(function () { startRecruitObserver(); }, 2000);
         }
+        // === 内容搬迁：把section归位到正确面板 ===
+        try{(function(){
+            var panels={};
+            ['explore','fight','equip','merchant','auto','inscription','craft','update'].forEach(function(n){
+                panels[n]=document.querySelector('[data-tab-panel="'+n+'"]');
+            });
+            // 1. 搬家：.lvsc-section 元素归位
+            document.querySelectorAll('.lvsc-section').forEach(function(sec){
+                var t=(sec.querySelector('.lvsc-section-title,.lvsc-section-title-row span')||{}).textContent||'';
+                var parent=sec.closest('.lvsc-tab-panel');
+                var target=null;
+                if (/^(妖兽遭遇|自动恢复|回血顺序|回灵顺序|护道)/.test(t)) target='fight';
+                else if (/^(装备维修|本命武器|装备套装)/.test(t)) target='equip';
+                else if (/^(冥想探索|虚空淬体|隐秘符|自动出狱|自动收徒)/.test(t)) target='auto';
+                else if (/^(批量炼制|藏宝图)/.test(t)) target='craft';
+                else if (/^(群机器人|Webhook)/.test(t)) target='update';
+                else if (/^(装备|炼制)/.test(t)){} // 占位符跳过
+                if (target && panels[target] && parent!==panels[target]) panels[target].appendChild(sec);
+            });
+            // 2. 护道与商人拆开：整个merchant面板的section逐个处理
+            var merchantOld = panels['merchant'];
+            if (merchantOld) {
+                merchantOld.querySelectorAll('.lvsc-section').forEach(function(sec){
+                    var t=(sec.querySelector('.lvsc-section-title,.lvsc-section-title-row span')||{}).textContent||'';
+                    if (/^(妖兽遭遇|自动恢复|回血|回灵|护道)/.test(t)) panels['fight'].appendChild(sec);
+                });
+            }
+            // 3. 清除装备和炼制面板的占位section
+            ['equip','craft'].forEach(function(k){
+                if (!panels[k]) return;
+                panels[k].querySelectorAll('.lvsc-section').forEach(function(s){
+                    if (s.querySelector('.lvsc-help') && s.textContent.indexOf('迁移中')>=0) s.remove();
+                });
+            });
+        })();}catch(e){console.warn('tab content migrate err',e);}
     }
 
     function waitForGame() {
