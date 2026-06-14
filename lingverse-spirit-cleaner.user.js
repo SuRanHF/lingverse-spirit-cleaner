@@ -4172,12 +4172,20 @@
             }
             // 神识不足
             if (ci.spirit < ci.cost) {
+                // 先确保系统探索完全停止，清理UI状态
+                if (typeof stopAutoExplore === 'function') { try { stopAutoExplore('神识不足', true); } catch(_) {} }
+                if (typeof forceClearMeditationUi === 'function') forceClearMeditationUi();
                 setStatus('神识不足，自动冥想', 'run');
-                if (state.autoMeditate) { if (await meditateThenWait()) continue; }
+                if (state.autoMeditate) {
+                    var medOk = await meditateThenWait();
+                    if (medOk) { setStatus('冥想完成，重启系统探索', 'run'); continue; }
+                }
                 setStatus('神识不足且无法恢复，停止', 'warn'); break;
             }
-            // 其他原因（可能是手动停止或正常结束）
-            break;
+            // 其他原因（可能是网络波动、短时卡顿）→ 等3秒重启
+            setStatus('系统探索中断，3秒后重启', 'run');
+            await sleep(3000);
+            if (!running) break;
         }
         running = false;
         persistRunning(false);
