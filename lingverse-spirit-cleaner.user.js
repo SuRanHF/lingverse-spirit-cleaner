@@ -4255,6 +4255,12 @@
             // 监控循环
             console.log('[SysExplore] entering monitor loop');
             while (running && typeof _autoExploreRunning !== 'undefined' && _autoExploreRunning) {
+                // 每10分钟清理中通知
+                if (Date.now() - _lastCleanReport > 600000) {
+                    _lastCleanReport = Date.now();
+                    var _rci = getSpiritInfo();
+                    wecomEnqueue('🔄 清理中', '神识剩余：' + _rci.spirit + '/' + _rci.maxSpirit + '\n修为：' + getPlayerRealmStr());
+                }
                 try {
                     // 兜底：游戏自动探索有时卡遭遇，脚本接管
                     if (typeof _encounterActive !== 'undefined' && _encounterActive) {
