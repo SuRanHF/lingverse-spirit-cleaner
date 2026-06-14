@@ -826,6 +826,7 @@
 
         // === 战斗恢复 ===
         autoSelfFightWeak: localStorage.getItem('lvSpiritCleaner.autoSelfFightWeak') !== '0',
+        aggressiveMode: localStorage.getItem('lvSpiritCleaner.aggressiveMode') === '1',
         selfFightMargin: readNumber('lvSpiritCleaner.selfFightMargin', 1.15),
         autoRecoveryMode: localStorage.getItem('lvSpiritCleaner.autoRecoveryMode') || 'both',
         autoRecoveryThreshold: readNumber('lvSpiritCleaner.autoRecoveryThreshold', 80),
@@ -3094,7 +3095,20 @@
     }
 
     async function handleEncounterEvent() {
-        if (!state.autoHireCheapest || busyEvent || !isEncounterActive() || !gameApi()) return false;
+        if (busyEvent || !isEncounterActive() || !gameApi()) return false;
+        // 激进模式：不找护道，直接打
+        if (state.aggressiveMode) {
+            busyEvent = true;
+            try {
+                setStatus('激进模式：直接迎战', 'run');
+                var fightBtn = document.querySelector('#encounterPanel button, .encounter-actions button');
+                if (fightBtn) { fightBtn.click(); return true; }
+                var res = await gameApi().post('/api/game/combat-choice', { choice: 'fight' });
+                return res && res.code === 200;
+            } catch (_) { return false; }
+            finally { busyEvent = false; }
+        }
+        if (!state.autoHireCheapest) return false;
         busyEvent = true;
         try {
             setStatus('寻找护道：' + hireModeLabel(state.hireMode), 'run');
@@ -4231,6 +4245,20 @@
             console.log('[SysExplore] entering monitor loop');
             while (running && typeof _autoExploreRunning !== 'undefined' && _autoExploreRunning) {
                 try {
+                    // 兜底：游戏自动探索有时卡遭遇，脚本接管
+                    if (typeof _encounterActive !== 'undefined' && _encounterActive) {
+                        console.log('[SysExplore] encounter stuck, script handling...');
+                        if (state.aggressiveMode) { await handleEncounterEvent(); }
+                        else { await handleSelfFightEvent(false); }
+                        await sleep(500);
+                        continue;
+                    }
+                    if (typeof _merchantActive !== 'undefined' && _merchantActive) {
+                        console.log('[SysExplore] merchant stuck, script handling...');
+                        try { await handleMerchantEvent(); } catch(_) {}
+                        await sleep(500);
+                        continue;
+                    }
                     if (state.autoNirvanaPill) await ensureNirvanaPill();
                     if (state.autoVoidBody && !hasVoidBodyBuff()) await ensureVoidBodyBuff(false);
                     if (state.autoHiddenCharm) await ensureHiddenCharm(false);
@@ -6207,6 +6235,14 @@
                 ep.insertBefore(s, ep.firstChild);
             })();
 
+            // ---------- 激进模式 → explore tab ----------
+            (function() {
+                var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
+                var s = sec('战斗模式');
+                s.innerHTML = '<label class="lvsc-check" style="font-size:11px"><input id="lvscAggressiveMode" type="checkbox">⚔ 激进模式（遇怪直接打，不找护道，更快但更险）</label>';
+                ep.insertBefore(s, ep.firstChild);
+            })();
+
             // ---------- 已开启功能摘要 → explore tab ----------
             (function() {
                 var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
@@ -6388,6 +6424,8 @@
                 var emSys = document.getElementById('lvscExploreModeSystem');
                 if (emApi) { emApi.checked = state.exploreMode === 'api'; emApi.onchange = function() { if (this.checked) { state.exploreMode = 'api'; persistSetting('lvSpiritCleaner.exploreMode', 'api'); } }; }
                 if (emSys) { emSys.checked = state.exploreMode === 'system'; emSys.onchange = function() { if (this.checked) { state.exploreMode = 'system'; persistSetting('lvSpiritCleaner.exploreMode', 'system'); } }; }
+                var ag = document.getElementById('lvscAggressiveMode');
+                if (ag) { ag.checked = state.aggressiveMode; ag.onchange = function() { state.aggressiveMode = this.checked; persistSetting('lvSpiritCleaner.aggressiveMode', this.checked); }; }
                 var bt = document.getElementById('lvscAutoBreakthrough'); if (bt) { bt.checked = state.autoBreakthrough; bt.onchange = function() { state.autoBreakthrough = this.checked; persistSetting('lvSpiritCleaner.autoBreakthrough', this.checked); }; }
                 var or = document.getElementById('lvscAutoOriginRepair'); if (or) { or.checked = state.autoOriginRepair; or.onchange = function() { state.autoOriginRepair = this.checked; persistSetting('lvSpiritCleaner.autoOriginRepair', this.checked); }; }
                 // 出售 & 分解
