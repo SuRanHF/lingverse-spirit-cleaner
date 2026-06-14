@@ -383,13 +383,13 @@
         var curLuck = Number(p.luck || 0);
         updateLuckDisplay();
         if (curLuck >= state.minLuck) {
-            setStatus('气运已达标: ' + curLuck + ' ≥ ' + state.minLuck + '，无需刷新', 'run');
+            setStatus('气运已达标: ' + curLuck + ' ≥ ' + state.minLuck + '，无需刷新', 'run', 'Luck');
             return;
         }
         autoRefreshLuckRunning = true;
         var useAd = state.luckRefreshMethod === 'ad';
         var methodLabel = useAd ? '仙缘' : '灵石';
-        setStatus('气运 ' + curLuck + ' < ' + state.minLuck + '，开始刷(' + methodLabel + ')...', 'run');
+        setStatus('气运 ' + curLuck + ' < ' + state.minLuck + '，开始刷(' + methodLabel + ')...', 'run', 'Luck');
         try {
             var startBtn = document.getElementById('lvscLuckRefreshStartBtn');
             var stopBtn = document.getElementById('lvscLuckRefreshStopBtn');
@@ -426,8 +426,8 @@
         } catch (_) {}
     }
     function stopLuckRefresh() { autoRefreshLuckRunning = false; }
-    async function autoBreakthroughCheck() { if (!gameApi() || Date.now() - _lastBreakCheck < 300000) return; _lastBreakCheck = Date.now(); var p = getPlayer() || {}; if (!p.canBreakthrough) return; try { setStatus('尝试突破...', 'run'); var r = await gameApi().post('/api/game/breakthrough', { daoBonusPercent: 0 }); if (r && r.code === 200 && r.data && r.data.success === 'true') { setStatus('突破成功!', 'run'); wecomEnqueue('突破成功', (p.realm||'') + ' 突破成功'); } } catch (_) {} }
-    async function autoOriginRepairCheck() { if (!gameApi() || Date.now() - _lastOriginCheck < 120000) return; _lastOriginCheck = Date.now(); var p = getPlayer() || {}; var od = p.originDamage; if (!od || !od.hasDamage) return; try { setStatus('修复本源碎裂...', 'run'); await gameApi().post('/api/player/origin-damage/repair', { type: 'stone' }); wecomEnqueue('本源修复', '已修复本源碎裂'); } catch (_) {} }
+    async function autoBreakthroughCheck() { if (!gameApi() || Date.now() - _lastBreakCheck < 300000) return; _lastBreakCheck = Date.now(); var p = getPlayer() || {}; if (!p.canBreakthrough) return; try { setStatus('尝试突破...', 'run', 'Break'); var r = await gameApi().post('/api/game/breakthrough', { daoBonusPercent: 0 }); if (r && r.code === 200 && r.data && r.data.success === 'true') { setStatus('突破成功!', 'run', 'Break'); wecomEnqueue('突破成功', (p.realm||'') + ' 突破成功'); } } catch (_) {} }
+    async function autoOriginRepairCheck() { if (!gameApi() || Date.now() - _lastOriginCheck < 120000) return; _lastOriginCheck = Date.now(); var p = getPlayer() || {}; var od = p.originDamage; if (!od || !od.hasDamage) return; try { setStatus('修复本源碎裂...', 'run', 'Origin'); await gameApi().post('/api/player/origin-damage/repair', { type: 'stone' }); wecomEnqueue('本源修复', '已修复本源碎裂'); } catch (_) {} }
     var autoDisposeRunning = false;
     var SCOPE_LABELS = {equip:'装备',pill:'丹药',scroll:'卷轴',misc:'杂物',all:'全部'};
     var RARITY_LABELS = ['','普通','优良','稀有','史诗'];
@@ -5312,6 +5312,11 @@
             '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusBuff" type="checkbox" checked>Buff</label>' +
             '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusInsc" type="checkbox" checked>铭文</label>' +
             '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusCraft" type="checkbox" checked>炼制</label>' +
+            '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusFarm" type="checkbox" checked>灵田</label>' +
+            '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusDispose" type="checkbox" checked>出售分解</label>' +
+            '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusLuck" type="checkbox" checked>气运</label>' +
+            '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusBreak" type="checkbox" checked>突破</label>' +
+            '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusOrigin" type="checkbox" checked>本源</label>' +
             '<label class="lvsc-check" style="font-size:11px;"><input id="lvscStatusWecom" type="checkbox" checked>企业微信</label>' +
             '</div>' +
             '<label class="lvsc-check"><input id="lvscUpdateMuted" type="checkbox">屏蔽更新提醒</label>' +
@@ -5759,7 +5764,7 @@
         };
         onStr('lvscWecomNotifyWebhook', 'wecomNotifyWebhook');
         // 状态栏分类开关
-        var statusCats = ['Run','Fight','Merchant','Meditate','Recover','Buff','Insc','Craft','Wecom'];
+        var statusCats = ['Run','Fight','Merchant','Meditate','Recover','Buff','Insc','Craft','Farm','Dispose','Luck','Break','Origin','Wecom'];
         for (var sci = 0; sci < statusCats.length; sci++) {
             var cat = statusCats[sci];
             var key = 'lvSpiritCleaner.statusMuted' + cat;
