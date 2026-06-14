@@ -4130,15 +4130,18 @@
 
     // --- 系统自带探索 + 脚本特性监控 ---
     async function systemExploreLoop() {
-        if (running || autoInscriptionRunning) return;
+        if (running || autoInscriptionRunning) { console.log('[SysExplore] blocked: running=' + running + ' insc=' + autoInscriptionRunning); return; }
         if (typeof startAutoExplore !== 'function') { setStatus('系统自动探索不可用', 'warn'); return; }
+        console.log('[SysExplore] start. medActive=' + window._meditationActive + ' medProg=' + window._meditationInProgress + ' _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
         // 如果正在冥想，先收功再启动
         if (window._meditationActive || window._meditationInProgress) {
             setStatus('检测到正在冥想，先收功...', 'run');
+            console.log('[SysExplore] meditating, stopping...');
             try {
                 if (typeof forceClearMeditationUi === 'function') forceClearMeditationUi();
-                await gameApi().post('/api/game/meditate/stop', {});
-            } catch (_) {}
+                var stopRes = await gameApi().post('/api/game/meditate/stop', {});
+                console.log('[SysExplore] meditate/stop res:', stopRes && stopRes.code);
+            } catch (e) { console.log('[SysExplore] meditate/stop err:', e.message); }
             await sleep(1000);
             window._meditationActive = false;
             window._meditationInProgress = false;
@@ -4150,51 +4153,51 @@
         setStatus('系统自动探索启动（脚本监控中）', 'run');
         while (running) {
             // 启动/重启系统自动探索
+            console.log('[SysExplore] loop top. _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
             if (typeof _autoExploreRunning === 'undefined' || !_autoExploreRunning) {
+                console.log('[SysExplore] calling startAutoExplore...');
                 startAutoExplore();
-                await sleep(3000); // 等它起来
+                await sleep(3000);
+                console.log('[SysExplore] after start: _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
             }
             // 监控循环
+            console.log('[SysExplore] entering monitor loop');
             while (running && typeof _autoExploreRunning !== 'undefined' && _autoExploreRunning) {
-                // 脚本特性：在系统探索运行时同步维护
                 try {
-                    // 恢复 + 修复
                     if (state.sectQuickRecovery) await activeRecover();
                     if (state.autoRepair) await triggerAutoRepair(false);
                     if (state.autoNatalDevour) await triggerAutoNatalDevour(false);
-                    // 突破 + 本源
                     if (state.autoBreakthrough) await autoBreakthroughCheck();
                     if (state.autoOriginRepair) await autoOriginRepairCheck();
-                    // 事件处理
                     if (await checkEventBlockers()) { await sleep(state.delayMs); continue; }
                     if (state.autoMasterRequests) await handleMasterRequests();
                     applyExploreMultiplier();
                 } catch (_) {}
-                await sleep(5000); // 5秒巡查一次，不跟系统探索抢节奏
+                await sleep(5000);
             }
+            console.log('[SysExplore] monitor loop exited. running=' + running + ' _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
             if (!running) break;
-            // 系统探索停了，排查原因
             var p = getPlayer() || {};
             var ci = getSpiritInfo();
-            // 死亡
+            console.log('[SysExplore] stopped. dead=' + (p.isDead || window.playerDead) + ' spirit=' + ci.spirit + ' cost=' + ci.cost);
             if (p.isDead || window.playerDead) {
                 setStatus('系统探索因死亡停止，尝试复活', 'warn');
                 if (state.autoReviveDeath && isDeathActive()) { await revivePlayer(); await sleep(2000); continue; }
                 setStatus('死亡，停止', 'warn'); break;
             }
-            // 神识不足
             if (ci.spirit < ci.cost) {
-                // 先确保系统探索完全停止，清理UI状态
                 if (typeof stopAutoExplore === 'function') { try { stopAutoExplore('神识不足', true); } catch(_) {} }
                 if (typeof forceClearMeditationUi === 'function') forceClearMeditationUi();
                 setStatus('神识不足，自动冥想', 'run');
+                console.log('[SysExplore] low spirit, meditating...');
                 if (state.autoMeditate) {
                     var medOk = await meditateThenWait();
+                    console.log('[SysExplore] meditate done: ' + medOk);
                     if (medOk) { setStatus('冥想完成，重启系统探索', 'run'); continue; }
                 }
                 setStatus('神识不足且无法恢复，停止', 'warn'); break;
             }
-            // 其他原因（可能是网络波动、短时卡顿）→ 等3秒重启
+            console.log('[SysExplore] unknown stop, retry in 3s');
             setStatus('系统探索中断，3秒后重启', 'run');
             await sleep(3000);
             if (!running) break;
