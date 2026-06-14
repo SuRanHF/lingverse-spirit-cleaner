@@ -2765,7 +2765,7 @@
         var isPrivate = isPrivateMessage(msgEl);
         var label = epChannel === 'MASTER' ? '师门' : epChannel === 'SECT' ? '宗门' : isPrivate ? '私信' : '世界';
         var prefix = '[' + label + '] ';
-        var webhook = isPrivate ? state.wecomPrivateWebhook : state.wecomWorldWebhook;
+        var webhook = isPrivate ? (state.wecomPrivateWebhook || state.wecomNotifyWebhook) : (state.wecomWorldWebhook || state.wecomNotifyWebhook);
         if (!webhook) return;
         wecomEnqueue(prefix + info.name + (info.realm ? ' [' + info.realm + ']' : ''), text || '(空消息)', webhook);
     }
