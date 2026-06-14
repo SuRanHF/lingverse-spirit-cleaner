@@ -4155,6 +4155,18 @@
             // 启动/重启系统自动探索
             console.log('[SysExplore] loop top. _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
             if (typeof _autoExploreRunning === 'undefined' || !_autoExploreRunning) {
+                // 确保游戏自带的自动探索开关是勾上的，否则 startAutoExplore 会直接 return
+                var toggle = document.getElementById('autoExploreToggle');
+                if (toggle && !toggle.checked) { toggle.checked = true; console.log('[SysExplore] autoExploreToggle forced on'); }
+                // 清理可能阻塞自动探索的事件
+                if (typeof _encounterActive !== 'undefined' && _encounterActive) {
+                    console.log('[SysExplore] encounter active, handling...');
+                    try { await handleSelfFightEvent(false); } catch(_) {}
+                }
+                if (typeof _merchantActive !== 'undefined' && _merchantActive) {
+                    console.log('[SysExplore] merchant active, handling...');
+                    try { await handleMerchantEvent(); } catch(_) {}
+                }
                 console.log('[SysExplore] calling startAutoExplore...');
                 startAutoExplore();
                 await sleep(3000);
