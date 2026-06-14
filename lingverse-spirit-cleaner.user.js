@@ -4127,11 +4127,16 @@
 
     // 神识不足时自动转入监测模式（等待自然恢复后自动重启清理）
     async function switchToMonitor(reason) {
+        console.log('[switchToMonitor] called, reason=' + reason + ' running=' + running + ' monitoringSpirit=' + monitoringSpirit);
         running = false;
+        monitoringSpirit = false;
+        persistRunning(false);
         updateMeter();
+        console.log('[switchToMonitor] after reset: running=' + running + ' monitoringSpirit=' + monitoringSpirit + ' runBtn=' + (document.getElementById('lvscRunBtn')||{}).textContent);
         setStatus(reason + '，自动转入神识监测', 'run');
         wecomEnqueue('转入监测', reason);
         await sleep(500);
+        console.log('[switchToMonitor] calling monitorSpiritLoop');
         monitorSpiritLoop();
     }
 
@@ -4273,6 +4278,7 @@
             // 每次循环第一件事：检查神识。不够就直接转监测，不依赖任何分支。
             // ################################################################
             var _ci = getSpiritInfo();
+            console.log('[runLoop top] spirit=' + _ci.spirit + ' cost=' + _ci.cost + ' running=' + running + ' mon=' + monitoringSpirit);
             if (_ci.player && _ci.spirit < _ci.cost) {
                 if (state.autoMeditate) {
                     if (await meditateThenWait()) {
