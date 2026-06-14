@@ -2735,15 +2735,10 @@
         } catch (err) { setStatus('企业微信异常: ' + (err.message || '').substring(0, 40), 'warn', 'Wecom'); }
     }
 
-    var _wecomThrottle = {};
     function wecomEnqueue(title, content, webhookUrl) {
         if (!state.wecomNotify) return;
         var url = webhookUrl || state.wecomNotifyWebhook;
         if (!url) return;
-        // 同标题10分钟内不重复发，避免反复横跳刷屏
-        var now = Date.now();
-        if (_wecomThrottle[title] && now - _wecomThrottle[title] < 600000) return;
-        _wecomThrottle[title] = now;
         wecomQueue.push({ title: title, content: content, url: url });
         if (wecomQueue.length > 50) wecomQueue.shift();
         wecomDrainQueue();
