@@ -438,7 +438,7 @@
         } catch (_) {}
     }
     function stopLuckRefresh() { autoRefreshLuckRunning = false; }
-    async function autoBreakthroughCheck() { if (!gameApi() || Date.now() - _lastBreakCheck < 300000) return; _lastBreakCheck = Date.now(); var p = getPlayer() || {}; if (!p.canBreakthrough) return; try { setStatus('尝试突破...', 'run', 'Break'); var r = await gameApi().post('/api/game/breakthrough', { daoBonusPercent: 0 }); if (r && r.code === 200 && r.data && r.data.success === 'true') { setStatus('突破成功!', 'run', 'Break'); wecomEnqueue('突破成功', (p.realm||'') + ' 突破成功'); } } catch (_) {} }
+    async function autoBreakthroughCheck() { if (!gameApi() || Date.now() - _lastBreakCheck < 300000) return; _lastBreakCheck = Date.now(); var p = getPlayer() || {}; if (!(p.breakthroughRate >= 0)) return; try { setStatus('尝试突破...', 'run', 'Break'); var r = await gameApi().post('/api/game/breakthrough', { daoBonusPercent: 0 }); if (r && r.code === 200 && r.data && r.data.success === 'true') { setStatus('突破成功!', 'run', 'Break'); wecomEnqueue('突破成功', (p.realm||'') + ' 突破成功'); } } catch (_) {} }
     async function autoOriginRepairCheck() { if (!gameApi() || Date.now() - _lastOriginCheck < 120000) return; _lastOriginCheck = Date.now(); var p = getPlayer() || {}; var od = p.originDamage; if (!od || !od.hasDamage) return; try { setStatus('修复本源碎裂...', 'run', 'Origin'); await gameApi().post('/api/player/origin-damage/repair', { type: 'stone' }); wecomEnqueue('本源修复', '已修复本源碎裂'); } catch (_) {} }
     var autoDisposeRunning = false;
     var SCOPE_LABELS = {equip:'装备',pill:'丹药',scroll:'卷轴',misc:'杂物',all:'全部'};
