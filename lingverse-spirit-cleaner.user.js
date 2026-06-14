@@ -4218,6 +4218,8 @@
                     console.log('[SysExplore] merchant active, handling...');
                     try { await handleMerchantEvent(); } catch(_) {}
                 }
+                // 先调倍率再启动，避免第一发就高倍率来不及切
+                applyExploreMultiplier();
                 console.log('[SysExplore] calling startAutoExplore...');
                 startAutoExplore();
                 await sleep(3000);
