@@ -4163,6 +4163,21 @@
         updateMeter();
         setStatus('系统自动探索启动（脚本监控中）', 'run');
         while (running) {
+            // 每次循环第一件事：检查神识
+            await refreshPlayer();
+            var _sci = getSpiritInfo();
+            if (_sci.player && _sci.spirit < _sci.cost) {
+                if (typeof stopAutoExplore === 'function') { try { stopAutoExplore('神识不足', true); } catch(_) {} }
+                if (state.autoMeditate) {
+                    if (await meditateThenWait()) {
+                        await refreshPlayer();
+                        var _sci2 = getSpiritInfo();
+                        if (_sci2.spirit >= _sci2.cost) continue;
+                    }
+                }
+                await switchToMonitor('系统探索神识不足');
+                return;
+            }
             // 启动/重启系统自动探索
             console.log('[SysExplore] loop top. _autoExploreRunning=' + (typeof _autoExploreRunning !== 'undefined' ? _autoExploreRunning : 'undef'));
             if (typeof _autoExploreRunning === 'undefined' || !_autoExploreRunning) {
@@ -4214,18 +4229,6 @@
                 if (state.autoReviveDeath && isDeathActive()) { await revivePlayer(); await sleep(2000); continue; }
                 setStatus('死亡，停止', 'warn'); break;
             }
-            if (ci.spirit < ci.cost) {
-                if (typeof stopAutoExplore === 'function') { try { stopAutoExplore('神识不足', true); } catch(_) {} }
-                if (typeof forceClearMeditationUi === 'function') forceClearMeditationUi();
-                console.log('[SysExplore] low spirit, trying meditation first');
-                if (state.autoMeditate) {
-                    var medOk = await meditateThenWait();
-                    if (medOk) { setStatus('冥想完成，重启系统探索', 'run'); continue; }
-                }
-                console.log('[SysExplore] meditation failed/disabled, switching to monitor');
-                await switchToMonitor('系统探索神识不足');
-                return;
-            }
             console.log('[SysExplore] unknown stop, retry in 3s');
             setStatus('系统探索中断，3秒后重启', 'run');
             await sleep(3000);
@@ -4266,6 +4269,21 @@
 
         while (running) {
             await refreshPlayer();
+            // ################################################################
+            // 每次循环第一件事：检查神识。不够就直接转监测，不依赖任何分支。
+            // ################################################################
+            var _ci = getSpiritInfo();
+            if (_ci.player && _ci.spirit < _ci.cost) {
+                if (state.autoMeditate) {
+                    if (await meditateThenWait()) {
+                        await refreshPlayer();
+                        var _ci2 = getSpiritInfo();
+                        if (_ci2.spirit >= _ci2.cost) continue;
+                    }
+                }
+                await switchToMonitor('神识不足');
+                return;
+            }
 
             // 每10分钟清理中通知
             if (Date.now() - _lastCleanReport > 600000) {
@@ -4348,24 +4366,9 @@
             applyExploreMultiplier();
             if (state.autoMasterRequests) await handleMasterRequests();
 
-            // 神识检查 + 冥想
+            // 其他停止原因（死亡、遭遇等）
             var stopReason = shouldStopBeforeAction();
-            if (stopReason) {
-                if (stopReason === 'need_meditate') {
-                    if (!await meditateThenWait()) {
-                        await switchToMonitor('神识不足且无法恢复');
-                        return;
-                    }
-                    // 冥想后二次确认，避免缓存数据导致假成功
-                    await refreshPlayer();
-                    var postMedCheck = getSpiritInfo();
-                    if (postMedCheck.spirit < postMedCheck.cost) {
-                        await switchToMonitor('冥想后神识仍不足');
-                        return;
-                    }
-                    await sleep(state.delayMs);
-                    continue;
-                }
+            if (stopReason && stopReason !== 'need_meditate') {
                 setStatus(stopReason + '，等待重试', 'warn');
                 await sleep(state.delayMs);
                 continue;
@@ -4375,27 +4378,8 @@
             try {
                 var result = await window.handleExplore();
                 updateMeter();
-                // 每次探索后强制刷新并检查神识，不依赖 result==='stop'
-                await sleep(300);
-                await refreshPlayer();
-                var afterExplore = getSpiritInfo();
-                if (afterExplore.player && afterExplore.spirit < afterExplore.cost) {
-                    if (state.autoMeditate) {
-                        if (await meditateThenWait()) {
-                            await refreshPlayer();
-                            var pmc = getSpiritInfo();
-                            if (pmc.spirit >= pmc.cost) { await sleep(state.delayMs); continue; }
-                        }
-                    }
-                    await switchToMonitor('探索后神识不足');
-                    return;
-                }
                 if (result === 'stop') {
                     await sleep(500);
-                    if (await checkEventBlockers()) {
-                        await sleep(state.delayMs);
-                        continue;
-                    }
                     await sleep(state.delayMs);
                     continue;
                 }
