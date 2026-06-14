@@ -274,6 +274,14 @@
     // --- 涅槃重生丹 ---
     async function ensureNirvanaPill() {
         if (!gameApi()) return;
+        // 先查身上是否已有涅槃加成
+        var p = getPlayer() || {};
+        var buffs = Array.isArray(p.activeBuffs) ? p.activeBuffs : [];
+        var hasNirvanaBuff = buffs.some(function(b) {
+            var n = (b.name || '').toLowerCase();
+            return n.indexOf('涅槃') >= 0 || n.indexOf('重生') >= 0;
+        });
+        if (hasNirvanaBuff) return; // 已有加成，不浪费
         // 查背包，有就直接用
         try { var invRes = await gameApi().get('/api/game/inventory'); } catch (_) { return; }
         if (!invRes || invRes.code !== 200 || !Array.isArray(invRes.data)) return;
