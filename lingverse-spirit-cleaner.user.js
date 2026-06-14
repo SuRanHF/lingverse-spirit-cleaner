@@ -4313,6 +4313,15 @@
         }
         running = false;
         persistRunning(false);
+        // 清理完成统计
+        if (_cleanStats.explores > 0) {
+            var _elapsed = Math.floor((Date.now() - _cleanStats.startTime) / 60000);
+            var _realmNow = getPlayerRealmStr();
+            var _lines = ['运行时长：' + _elapsed + '分钟', '探索次数：' + _cleanStats.explores, '遭遇妖兽：' + _cleanStats.combats + '次'];
+            if (_cleanStats.deaths > 0) _lines.push('死亡次数：' + _cleanStats.deaths);
+            if (_cleanStats.startRealm) _lines.push('修为变化：' + _cleanStats.startRealm + ' → ' + _realmNow);
+            wecomEnqueue('✅ 清理结束', _lines.join('\n'));
+        }
         updateMeter();
         setStatus('系统探索已停止', 'idle');
     }
