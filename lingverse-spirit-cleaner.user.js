@@ -4882,6 +4882,45 @@
         }
     }
 
+    // --- 在线公告拉取 ---
+    var _lastAnnounceSeen = localStorage.getItem('lvSpiritCleaner.lastAnnounceId') || '';
+    async function checkAnnounce() {
+        try {
+            var endpoint = (state.onlineStatsEndpoint || DEFAULT_ONLINE_STATS_ENDPOINT).replace('/api/heartbeat', '/api/announce');
+            var res = await fetch(endpoint);
+            if (!res.ok) return;
+            var data = await res.json();
+            if (!data || !data.active || !data.message) return;
+            if (data.id && data.id === _lastAnnounceSeen) return; // 已看过
+            // 显示公告弹窗
+            showAnnounceModal(data);
+        } catch (_) {}
+    }
+    function showAnnounceModal(data) {
+        // 移除旧弹窗
+        var old = document.getElementById('lvscAnnounceModal');
+        if (old) old.remove();
+        var modal = document.createElement('div');
+        modal.id = 'lvscAnnounceModal';
+        var title = data.title || '📢 来自作者的公告';
+        var msg = (data.message || '').replace(/\n/g, '<br>');
+        modal.innerHTML =
+            '<div style="position:fixed;inset:0;z-index:2147483003;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center">' +
+            '<div style="background:#1e1b2a;border:2px solid #dbb970;border-radius:12px;padding:24px;max-width:420px;width:90%;color:#cfc6b2;font-size:14px;box-shadow:0 0 40px rgba(219,185,112,.2)">' +
+            '<div style="font-size:18px;font-weight:700;color:#dbb970;margin-bottom:12px">' + title + '</div>' +
+            '<div style="line-height:1.8;margin-bottom:20px">' + msg + '</div>' +
+            '<button id="lvscAnnounceClose" style="width:100%;height:40px;background:#dbb970;color:#17141d;border:0;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">我知道了</button>' +
+            '</div></div>';
+        document.body.appendChild(modal);
+        document.getElementById('lvscAnnounceClose').onclick = function() {
+            modal.remove();
+            if (data.id) {
+                _lastAnnounceSeen = data.id;
+                localStorage.setItem('lvSpiritCleaner.lastAnnounceId', data.id);
+            }
+        };
+    }
+
     function activatePanelTab(tabName) {
         var allowed = ['explore','fight','equip','merchant','auto','inscription','craft','update','basic','combat','flow'];
         if (allowed.indexOf(tabName) < 0) tabName = 'explore';
@@ -5927,6 +5966,8 @@
         startOnlineHeartbeat();
         setTimeout(function () { checkCloudUpdate(false); }, 1500);
         setInterval(function () { checkCloudUpdate(false); }, CLOUD_UPDATE_POLL_MS);
+        setTimeout(function () { checkAnnounce(); }, 3000);
+        setInterval(function () { checkAnnounce(); }, 120000); // 每2分钟检查在线公告
         setInterval(updateMeter, 2000);
         applyChatZIndex(state.chatOnTop);
         if (state.autoRecruit || state.wecomNotify) {
