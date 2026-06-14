@@ -831,6 +831,7 @@
 
         // === 自动流程 ===
         autoMeditate: localStorage.getItem('lvSpiritCleaner.autoMeditate') !== '0',
+        exploreMode: localStorage.getItem('lvSpiritCleaner.exploreMode') || 'api',
         autoExploreAfterMeditate: localStorage.getItem('lvSpiritCleaner.autoExploreAfterMeditate') !== '0',
         checkDaoyunBoost: localStorage.getItem('lvSpiritCleaner.checkDaoyunBoost') !== '0',
         useAdvancedMeditate: localStorage.getItem('lvSpiritCleaner.useAdvancedMeditate') === '1',
@@ -5469,12 +5470,20 @@
         document.getElementById('lvscHiddenCharmBuyQty').value = String(state.hiddenCharmBuyQty);
         document.getElementById('lvscHiddenCharmRetryMs').value = String(state.hiddenCharmRetryMs);
         document.getElementById('lvscRunBtn').onclick = function () {
-            if (running) stop('手动停止');
-            else runLoop();
+            if (running) { stop('手动停止'); return; }
+            if (state.exploreMode === 'system') { if (typeof startAutoExplore === 'function') startAutoExplore(); else setStatus('系统自动探索不可用', 'warn'); return; }
+            runLoop();
         };
         document.getElementById('lvscCompactRunBtn').onclick = function () {
-            if (running) stop('手动停止');
-            else runLoop();
+            if (running) { stop('手动停止'); return; }
+            if (state.exploreMode === 'system') { if (typeof startAutoExplore === 'function') startAutoExplore(); else setStatus('系统自动探索不可用', 'warn'); return; }
+            runLoop();
+        };
+        // 停止时同步停止系统自动探索
+        var _origStop = stop;
+        stop = function(reason) {
+            if (typeof stopAutoExplore === 'function') { try { stopAutoExplore(reason || '脚本停止', false); } catch(_) {} }
+            _origStop(reason);
         };
         document.getElementById('lvscMonitorBtn').onclick = toggleSpiritMonitor;
         document.getElementById('lvscFeedbackBtn').onclick = function () {
@@ -6005,6 +6014,14 @@
                 if (ct && !ct.querySelector('option[value="talisman"]')) { var o = document.createElement('option'); o.value = 'talisman'; o.textContent = '制符'; ct.appendChild(o); }
             })();
 
+            // ---------- 探索模式 → explore tab ----------
+            (function() {
+                var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
+                var s = sec('探索模式');
+                s.innerHTML = '<div style="display:flex;gap:6px;align-items:center"><label style="font-size:11px"><input id="lvscExploreModeApi" type="radio" name="lvscExploreMode" value="api"> 脚本API（自定义倍率/事件处理）</label><label style="font-size:11px"><input id="lvscExploreModeSystem" type="radio" name="lvscExploreMode" value="system"> 系统自带（游戏内置自动探索）</label></div>';
+                ep.insertBefore(s, ep.firstChild);
+            })();
+
             // ---------- 已开启功能摘要 → explore tab ----------
             (function() {
                 var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
@@ -6181,6 +6198,11 @@
                 var lrStart = document.getElementById('lvscLuckRefreshStartBtn'); if (lrStart) lrStart.onclick = function() { autoRefreshLuckLoop(); };
                 var lrStop = document.getElementById('lvscLuckRefreshStopBtn'); if (lrStop) lrStop.onclick = stopLuckRefresh;
                 updateLuckDisplay();
+                // 探索模式
+                var emApi = document.getElementById('lvscExploreModeApi');
+                var emSys = document.getElementById('lvscExploreModeSystem');
+                if (emApi) { emApi.checked = state.exploreMode === 'api'; emApi.onchange = function() { if (this.checked) { state.exploreMode = 'api'; persistSetting('lvSpiritCleaner.exploreMode', 'api'); } }; }
+                if (emSys) { emSys.checked = state.exploreMode === 'system'; emSys.onchange = function() { if (this.checked) { state.exploreMode = 'system'; persistSetting('lvSpiritCleaner.exploreMode', 'system'); } }; }
                 var bt = document.getElementById('lvscAutoBreakthrough'); if (bt) { bt.checked = state.autoBreakthrough; bt.onchange = function() { state.autoBreakthrough = this.checked; persistSetting('lvSpiritCleaner.autoBreakthrough', this.checked); }; }
                 var or = document.getElementById('lvscAutoOriginRepair'); if (or) { or.checked = state.autoOriginRepair; or.onchange = function() { state.autoOriginRepair = this.checked; persistSetting('lvSpiritCleaner.autoOriginRepair', this.checked); }; }
                 // 出售 & 分解
