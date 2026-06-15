@@ -6295,15 +6295,20 @@
                             var nm = (item.name || item.itemName || '').toLowerCase();
                             if (!nm || nm.indexOf(q) < 0 || seen[item.templateId]) continue;
                             seen[item.templateId] = true; found = true;
-                            var div = document.createElement('div');
-                            div.textContent = (item.name || item.itemName || '?');
-                            div.style.cssText = 'padding:2px 6px;cursor:pointer;border-radius:3px';
-                            div.setAttribute('data-tid', String(item.templateId || ''));
-                            div.addEventListener('mouseover', function() { this.style.background = 'rgba(219,185,112,.1)'; });
-                            div.addEventListener('mouseout', function() { this.style.background = 'transparent'; });
-                            div.addEventListener('click', function() {
-                                var tid = this.getAttribute('data-tid');
-                                if (!tid) return;
+                            var row = document.createElement('div');
+                            row.style.cssText = 'display:flex;align-items:center;padding:2px 6px;border-radius:3px';
+                            row.addEventListener('mouseover', function() { this.style.background = 'rgba(219,185,112,.1)'; });
+                            row.addEventListener('mouseout', function() { this.style.background = 'transparent'; });
+                            var nameSpan = document.createElement('span');
+                            nameSpan.textContent = (item.name || item.itemName || '?');
+                            nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+                            row.appendChild(nameSpan);
+                            var addBtn = document.createElement('button');
+                            addBtn.textContent = '+保护';
+                            var tid = String(item.templateId || '');
+                            addBtn.style.cssText = 'height:18px;padding:0 6px;margin-left:6px;background:rgba(107,201,160,.16);color:#6bc9a0;border:1px solid rgba(107,201,160,.3);border-radius:3px;cursor:pointer;font-size:9px;white-space:nowrap';
+                            addBtn.addEventListener('click', function(e) {
+                                e.stopPropagation();
                                 var pids = Array.isArray(state.autoDisposeProtectedIds) ? state.autoDisposeProtectedIds.slice() : [];
                                 if (pids.indexOf(tid) < 0) {
                                     pids.push(tid);
@@ -6312,7 +6317,8 @@
                                     window._renderProtectedList();
                                 }
                             });
-                            searchResults.appendChild(div);
+                            row.appendChild(addBtn);
+                            searchResults.appendChild(row);
                         }
                         if (!found) searchResults.innerHTML = '<div style="color:var(--text-muted);padding:2px 6px">无结果</div>';
                     } catch (_) { searchResults.innerHTML = '搜索失败'; }
