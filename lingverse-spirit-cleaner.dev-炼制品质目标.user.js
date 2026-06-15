@@ -100,7 +100,7 @@
 
     async function fetchRecipes(type) {
         if (!gameApi()) return [];
-        var ep = type === 'alchemy' ? '/api/game/alchemy/recipes' : '/api/game/forge/recipes';
+        var ep = type === 'alchemy' ? '/api/game/alchemy/recipes' : type === 'talisman' ? '/api/game/talisman/recipes' : '/api/game/forge/recipes';
         try {
             var res = await gameApi().get(ep);
             if (res && res.code === 200) {
@@ -126,7 +126,9 @@
     }
     var _craftStats = { total: 0, startCount: 0 };
     async function autoCraftLoop() {
-        if (autoCraftRunning || running || autoInscriptionRunning) { setStatus('其他流程运行中', 'warn'); return; }
+        if (autoCraftRunning) { setStatus('炼制已在运行', 'warn'); return; }
+        if (running) { setStatus('清理运行中，停止后再炼制', 'warn'); return; }
+        if (autoInscriptionRunning) { setStatus('铭文洗练中，停止后再炼制', 'warn'); return; }
         syncSettingsFromUi();
         if (!state.craftRecipeId || !gameApi()) { setStatus('请先选择配方', 'warn'); return; }
         autoCraftRunning = true;
