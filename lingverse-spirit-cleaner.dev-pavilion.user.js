@@ -754,7 +754,6 @@
     // 自动关闭"操作异常"弹窗
     function autoCloseErrorModals() {
         try {
-            // 找游戏弹窗里的关闭按钮：.modal-btn--outline, .modal-btn, .btn-close, [onclick*=closeModal]
             var btns = document.querySelectorAll('.modal-btn--outline, .modal-btn--cancel, .modal-btn-close, [onclick*="closeModal"]');
             for (var _bi = 0; _bi < btns.length; _bi++) {
                 var _btn = btns[_bi];
@@ -765,6 +764,7 @@
             }
         } catch (_) {}
     }
+    setInterval(autoCloseErrorModals, 3000); // 每3秒全局扫描
     var wecomBusy = false;
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
