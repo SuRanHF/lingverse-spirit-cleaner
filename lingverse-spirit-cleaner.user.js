@@ -6287,34 +6287,9 @@
                     searchResults.innerHTML = '搜索中...';
                     try {
                         if (!_searchCache.length) {
-                            // 背包
                             try {
-                                var invR = await gameApi().get('/api/game/inventory');
-                                if (invR && invR.code === 200 && Array.isArray(invR.data)) _searchCache = _searchCache.concat(invR.data);
-                            } catch (_) {}
-                            // 炼丹配方
-                            try {
-                                var alcR = await gameApi().get('/api/game/alchemy/recipes');
-                                if (alcR && alcR.code === 200 && alcR.data) {
-                                    var rl = Array.isArray(alcR.data) ? alcR.data : (alcR.data.recipes || []);
-                                    for (var _r = 0; _r < rl.length; _r++) _searchCache.push({ name: rl[_r].pillName || rl[_r].name, templateId: rl[_r].pillId || rl[_r].id });
-                                }
-                            } catch (_) {}
-                            // 锻造配方
-                            try {
-                                var fgR = await gameApi().get('/api/game/forge/recipes');
-                                if (fgR && fgR.code === 200 && fgR.data) {
-                                    var fl = Array.isArray(fgR.data) ? fgR.data : (fgR.data.recipes || []);
-                                    for (var _fr = 0; _fr < fl.length; _fr++) _searchCache.push({ name: fl[_fr].name || fl[_fr].recipeName, templateId: fl[_fr].recipeId || fl[_fr].id });
-                                }
-                            } catch (_) {}
-                            // 制符配方
-                            try {
-                                var tlR = await gameApi().get('/api/game/talisman/recipes');
-                                if (tlR && tlR.code === 200 && tlR.data) {
-                                    var tll = Array.isArray(tlR.data) ? tlR.data : (tlR.data.recipes || []);
-                                    for (var _tr = 0; _tr < tll.length; _tr++) _searchCache.push({ name: tll[_tr].name || tll[_tr].recipeName, templateId: tll[_tr].recipeId || tll[_tr].id });
-                                }
+                                var encR = await gameApi().get('/api/game/encyclopedia');
+                                if (encR && encR.code === 200 && Array.isArray(encR.data)) _searchCache = encR.data;
                             } catch (_) {}
                         }
                         searchResults.innerHTML = '';
@@ -6328,8 +6303,8 @@
                             row.style.cssText = 'display:flex;align-items:center;padding:2px 6px;border-radius:3px';
                             row.addEventListener('mouseover', function() { this.style.background = 'rgba(219,185,112,.1)'; });
                             row.addEventListener('mouseout', function() { this.style.background = 'transparent'; });
-                            var tid = String(item.templateId || '');
-                            var tname = (item.name || item.itemName || item.pillName || item.recipeName || '');
+                            var tid = String(item.templateId || item.id || '');
+                            var tname = (item.name || item.itemName || '');
                             var nameSpan = document.createElement('span');
                             nameSpan.textContent = tname;
                             nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
