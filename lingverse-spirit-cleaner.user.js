@@ -6316,7 +6316,12 @@
                             var addBtn = document.createElement('button');
                             addBtn.textContent = '+保护';
                             addBtn.style.cssText = 'height:18px;padding:0 6px;background:rgba(107,201,160,.16);color:#6bc9a0;border:1px solid rgba(107,201,160,.3);border-radius:3px;cursor:pointer;font-size:9px;white-space:nowrap';
+                            // 全部品质匹配：找到所有同前缀的ID
+                            var matchAllBtn = document.createElement('button');
+                            matchAllBtn.textContent = '+保护全部品质';
+                            matchAllBtn.style.cssText = 'height:18px;padding:0 6px;margin-left:4px;background:rgba(219,185,112,.16);color:#dbb970;border:1px solid rgba(219,185,112,.3);border-radius:3px;cursor:pointer;font-size:9px;white-space:nowrap';
                             (function(_tid, _nm) {
+                                // 只保护当前品质
                                 addBtn.addEventListener('click', function(e) {
                                     e.stopPropagation();
                                     var items = Array.isArray(state.autoDisposeProtected) ? state.autoDisposeProtected.slice() : [];
@@ -6327,7 +6332,29 @@
                                         window._renderProtectedList();
                                     }
                                 });
+                                // 保护全部品质：匹配同前缀ID
+                                matchAllBtn.addEventListener('click', function(e) {
+                                    e.stopPropagation();
+                                    var baseId = _tid.replace(/_\d+$/, ''); // 去尾号 blank_scroll_3 → blank_scroll
+                                    var items = Array.isArray(state.autoDisposeProtected) ? state.autoDisposeProtected.slice() : [];
+                                    // 从搜索结果缓存里找所有匹配的
+                                    for (var _ci = 0; _ci < _searchCache.length; _ci++) {
+                                        var ci = _searchCache[_ci];
+                                        var cid = String(ci.templateId || ci.id || '');
+                                        var cbase = cid.replace(/_\d+$/, '');
+                                        if (cbase === baseId && !items.some(function(x) { return (typeof x === 'string' ? x : x.id) === cid; })) {
+                                            items.push({ id: cid, name: (ci.name || ci.itemName || '') });
+                                        }
+                                    }
+                                    // 如果同一 baseId 都没搜到，至少加上当前这个
+                                    if (items.length === 0) items.push({ id: _tid, name: _nm });
+                                    state.autoDisposeProtected = items;
+                                    persistSetting('lvSpiritCleaner.autoDisposeProtected', JSON.stringify(items));
+                                    window._renderProtectedList();
+                                });
                             })(tid, tname);
+                            row.appendChild(addBtn);
+                            row.appendChild(matchAllBtn);
                             row.appendChild(addBtn);
                             searchResults.appendChild(row);
                         }
