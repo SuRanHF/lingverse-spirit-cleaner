@@ -6461,12 +6461,16 @@
                 p.insertBefore(s, p.firstChild);
             })();
 
-            // ---------- 品质目标 → craft ----------
+            // ---------- 品质目标 插入批量炼制后面 ----------
             (function() {
-                var p = document.querySelector('[data-tab-panel="craft"]'); if (!p) return;
-                var s = sec('品质目标');
-                s.innerHTML = '<label style="font-size:11px">达到品质<select id="lvscCraftQualityTarget"><option value="0">不限</option><option value="1">普通及以上</option><option value="2">优良及以上</option><option value="3">稀有及以上</option><option value="4">史诗及以上</option><option value="5">传说</option></select></label><span style="font-size:10px;color:var(--text-muted)">炼制停止条件：达到目标个数 且 品质达标</span>';
-                p.insertBefore(s, p.firstChild);
+                var batchInput = document.getElementById('lvscCraftBatchSize');
+                if (!batchInput) return;
+                var prt = batchInput.parentElement;
+                if (!prt) return;
+                var lbl = document.createElement('label');
+                lbl.style.cssText = 'font-size:11px';
+                lbl.innerHTML = '达到品质<select id="lvscCraftQualityTarget"><option value="0">不限</option><option value="1">普通及以上</option><option value="2">优良及以上</option><option value="3">稀有及以上</option><option value="4">史诗及以上</option><option value="5">传说</option></select>';
+                prt.parentElement.insertBefore(lbl, prt.nextSibling);
             })();
 
             // ---------- 珍宝阁 → craft ----------
