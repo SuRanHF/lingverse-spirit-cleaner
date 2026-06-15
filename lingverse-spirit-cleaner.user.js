@@ -6306,7 +6306,8 @@
                             var tid = String(item.templateId || item.id || '');
                             var tname = (item.name || item.itemName || '');
                             var nameSpan = document.createElement('span');
-                            nameSpan.textContent = tname;
+                            var m2 = tid.match(/_(\d+)$/); var RAR = ['','普通','优良','稀有','史诗','传说'];
+                            nameSpan.textContent = tname + (m2 && RAR[parseInt(m2[1])] ? ' [' + RAR[parseInt(m2[1])] + ']' : '');
                             nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
                             row.appendChild(nameSpan);
                             var idSpan = document.createElement('span');
