@@ -6347,8 +6347,13 @@
                                             items.push({ id: cid, name: (ci.name || ci.itemName || '') });
                                         }
                                     }
-                                    // 如果同一 baseId 都没搜到，至少加上当前这个
-                                    if (items.length === 0) items.push({ id: _tid, name: _nm });
+                                    // 兜底：百科可能没传说级，强制覆盖1-5档
+                                    for (var ri = 1; ri <= 5; ri++) {
+                                        var fid = baseId + '_' + ri;
+                                        if (!items.some(function(x) { return (typeof x === 'string' ? x : x.id) === fid; })) {
+                                            items.push({ id: fid, name: _nm });
+                                        }
+                                    }
                                     state.autoDisposeProtected = items;
                                     persistSetting('lvSpiritCleaner.autoDisposeProtected', JSON.stringify(items));
                                     window._renderProtectedList();
