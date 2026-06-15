@@ -470,6 +470,22 @@
                     if (rule.action === 'sell') {
                         var p = { maxRarity: rule.maxRarity };
                         if (rule.scope !== 'all') p.scope = rule.scope;
+                        // 收集排除ID：锁定物品 + 用户手动保护
+                        var excludedIds = [];
+                        try {
+                            var _inv = await gameApi().get('/api/game/inventory');
+                            if (_inv && _inv.code === 200 && Array.isArray(_inv.data)) {
+                                for (var _ii = 0; _ii < _inv.data.length; _ii++) {
+                                    var _it = _inv.data[_ii];
+                                    if (_it && _it.isLocked && _it.templateId) excludedIds.push(String(_it.templateId));
+                                }
+                            }
+                        } catch (_) {}
+                        var protIds = Array.isArray(state.autoDisposeProtectedIds) ? state.autoDisposeProtectedIds : [];
+                        for (var _pi = 0; _pi < protIds.length; _pi++) {
+                            if (excludedIds.indexOf(protIds[_pi]) < 0) excludedIds.push(protIds[_pi]);
+                        }
+                        if (excludedIds.length) p.excludedTemplateIds = excludedIds;
                         var preview = await gameApi().post('/api/game/sell-batch/preview', p);
                         if (preview && preview.code === 200 && preview.data && preview.data.count) {
                             var batch = await gameApi().post('/api/game/sell-batch', p);
@@ -880,6 +896,7 @@
         autoDisposeEnabled: localStorage.getItem('lvSpiritCleaner.autoDisposeEnabled') === '1',
         autoDisposeRules: (function() { try { return JSON.parse(localStorage.getItem('lvSpiritCleaner.autoDisposeRules') || '[]'); } catch(_) { return []; } })(),
         autoDisposeInterval: readNumber('lvSpiritCleaner.autoDisposeInterval', 300),
+        autoDisposeProtectedIds: (function() { try { return JSON.parse(localStorage.getItem('lvSpiritCleaner.autoDisposeProtectedIds') || '[]'); } catch(_) { return []; } })(),
         farmAutoHarvest: localStorage.getItem('lvSpiritCleaner.farmAutoHarvest') !== '0',
         farmAutoPlant: localStorage.getItem('lvSpiritCleaner.farmAutoPlant') !== '0',
         farmSeedId: localStorage.getItem('lvSpiritCleaner.farmSeedId') || '',
@@ -6189,6 +6206,17 @@
                 // 监控列表
                 var listDiv = el('div'); listDiv.id = 'lvscDisposeRulesList'; listDiv.style.cssText = 'min-height:20px;font-size:11px;color:#cfc6b2';
                 s.appendChild(listDiv);
+                // 搜索保护
+                var searchRow = el('div'); searchRow.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+                var searchInput = el('input'); searchInput.id = 'lvscDisposeSearch'; searchInput.placeholder = '搜物品名加入保护'; searchInput.style.cssText = 'flex:1;height:24px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#cfc6b2;padding:0 6px;font-size:11px';
+                var searchBtn = el('button'); searchBtn.textContent = '搜索'; searchBtn.style.cssText = 'height:24px;padding:0 8px;background:rgba(219,185,112,.16);color:#dbb970;border:1px solid rgba(219,185,112,.3);border-radius:4px;cursor:pointer;font-size:10px;white-space:nowrap';
+                searchRow.appendChild(searchInput); searchRow.appendChild(searchBtn);
+                s.appendChild(searchRow);
+                var searchResults = el('div'); searchResults.id = 'lvscDisposeSearchResults'; searchResults.style.cssText = 'display:none;max-height:200px;overflow:auto;font-size:10px;color:#cfc6b2;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06);border-radius:4px;padding:4px;margin-top:2px';
+                s.appendChild(searchResults);
+                // 保护列表
+                var protDiv = el('div'); protDiv.id = 'lvscDisposeProtectedList'; protDiv.style.cssText = 'min-height:16px;font-size:10px;color:var(--text-muted);margin-top:2px';
+                s.appendChild(protDiv);
                 // 日志
                 var logDiv2 = el('div'); logDiv2.id = 'lvscDisposeLog'; logDiv2.style.cssText = 'min-height:40px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:var(--text-muted);background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px'; logDiv2.textContent = '等待执行...';
                 s.appendChild(logDiv2);
@@ -6241,6 +6269,50 @@
                 };
                 addBtn.addEventListener('click', window._addDisposeRule);
                 window._renderDisposeRules();
+                // 搜索物品
+                var _searchCache = [];
+                searchBtn.addEventListener('click', async function() {
+                    var q = (searchInput.value || '').trim().toLowerCase();
+                    if (!q) return;
+                    searchResults.style.display = 'block';
+                    searchResults.innerHTML = '搜索中...';
+                    try {
+                        if (!_searchCache.length) {
+                            var invR = await (typeof gameApi === 'function' ? gameApi() : window.api).get('/api/game/inventory');
+                            if (invR && invR.code === 200 && Array.isArray(invR.data)) _searchCache = invR.data;
+                            var recR = await (typeof gameApi === 'function' ? gameApi() : window.api).get('/api/game/alchemy/recipes');
+                            if (recR && recR.code === 200 && recR.data) {
+                                var rl = Array.isArray(recR.data) ? recR.data : (recR.data.recipes || []);
+                                for (var _r = 0; _r < rl.length; _r++) {
+                                    _searchCache.push({ name: rl[_r].pillName || rl[_r].name, templateId: rl[_r].pillId || rl[_r].id, from: '配方' });
+                                }
+                            }
+                        }
+                        var hits = [];
+                        var seen = {};
+                        for (var _si = 0; _si < _searchCache.length; _si++) {
+                            var item = _searchCache[_si];
+                            var nm = (item.name || item.itemName || '').toLowerCase();
+                            if (!nm || nm.indexOf(q) < 0 || seen[item.templateId]) continue;
+                            seen[item.templateId] = true;
+                            hits.push('<div style="padding:2px 6px;cursor:pointer;border-radius:3px" onmouseover="this.style.background=\'rgba(219,185,112,.1)\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();var pids=state.autoDisposeProtectedIds||[];var tid=\'' + (item.templateId || '') + '\';if(pids.indexOf(tid)<0){pids.push(tid);state.autoDisposeProtectedIds=pids;persistSetting(\'lvSpiritCleaner.autoDisposeProtectedIds\',JSON.stringify(pids));window._renderProtectedList();}">' + (item.name || item.itemName || '?') + '<span style="color:#6a6560;margin-left:6px">' + (item.templateId||'') + '</span></div>');
+                        }
+                        searchResults.innerHTML = hits.length ? hits.join('') : '<div style="color:var(--text-muted)">无结果</div>';
+                    } catch (_) { searchResults.innerHTML = '搜索失败'; }
+                });
+                searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') searchBtn.click(); });
+                // 渲染保护列表
+                window._renderProtectedList = function() {
+                    var el = document.getElementById('lvscDisposeProtectedList'); if (!el) return;
+                    var ids = Array.isArray(state.autoDisposeProtectedIds) ? state.autoDisposeProtectedIds : [];
+                    if (!ids.length) { el.innerHTML = '保护列表：空'; return; }
+                    var html = '保护：';
+                    for (var _i = 0; _i < ids.length; _i++) {
+                        html += '<span style="padding:0 4px;background:rgba(107,201,160,.1);color:#6bc9a0;border-radius:3px;margin:0 2px">' + ids[_i] + '<span onclick="var p=state.autoDisposeProtectedIds||[];var s2=new Set(p);s2.delete(\'' + ids[_i] + '\');state.autoDisposeProtectedIds=Array.from(s2);persistSetting(\'lvSpiritCleaner.autoDisposeProtectedIds\',JSON.stringify(state.autoDisposeProtectedIds));window._renderProtectedList();" style="color:#ff6b6b;cursor:pointer;margin-left:2px">✕</span></span>';
+                    }
+                    el.innerHTML = html;
+                };
+                window._renderProtectedList();
             })();
             // ---------- 灵田 → auto ----------
             (function() {
