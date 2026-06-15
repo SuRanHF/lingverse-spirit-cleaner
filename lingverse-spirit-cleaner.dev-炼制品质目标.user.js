@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         LingVerse Spirit Cleaner
+// @name         LingVerse Spirit Cleaner [DEV]
 // @namespace    local.lingverse.tools
 // @version      1.6.0
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
