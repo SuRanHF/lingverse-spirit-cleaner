@@ -6678,7 +6678,7 @@
                 var pLoop = document.getElementById('lvscPavilionLoop'); if (pLoop) { pLoop.value = String(state.pavilionLoop); pLoop.onchange = function() { state.pavilionLoop = Math.max(1, Number(this.value)||10); persistSetting('lvSpiritCleaner.pavilionLoop', String(state.pavilionLoop)); }; }
                 var pDelay = document.getElementById('lvscPavilionDelay'); if (pDelay) { pDelay.value = String(state.pavilionDelay); pDelay.onchange = function() { state.pavilionDelay = Math.max(100, Number(this.value)||500); persistSetting('lvSpiritCleaner.pavilionDelay', String(state.pavilionDelay)); }; }
                 var pStart = document.getElementById('lvscAutoPavilionBtn');
-                if (pStart) pStart.onclick = function() { if (autoPavilionRunning) { stopPavilion(); return; } this.style.display = 'none'; document.getElementById('lvscStopPavilionBtn').style.display = ''; autoPavilionLoop().then(function(){document.getElementById('lvscAutoPavilionBtn').style.display='';document.getElementById('lvscStopPavilionBtn').style.display='none';}).catch(function(){document.getElementById('lvscAutoPavilionBtn').style.display='';document.getElementById('lvscStopPavilionBtn').style.display='none';}); };
+                if (pStart) pStart.onclick = function() { if (autoPavilionRunning) return; this.style.display = 'none'; document.getElementById('lvscStopPavilionBtn').style.display = ''; autoPavilionLoop().finally(function() { document.getElementById('lvscAutoPavilionBtn').style.display = ''; document.getElementById('lvscStopPavilionBtn').style.display = 'none'; }); };
                 var pStop = document.getElementById('lvscStopPavilionBtn'); if (pStop) pStop.onclick = stopPavilion;
                 // 配置导入导出按钮
             (function() {
