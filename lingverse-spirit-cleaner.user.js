@@ -6288,16 +6288,33 @@
                                 }
                             }
                         }
-                        var hits = [];
-                        var seen = {};
+                        searchResults.innerHTML = '';
+                        var seen = {}; var found = false;
                         for (var _si = 0; _si < _searchCache.length; _si++) {
                             var item = _searchCache[_si];
                             var nm = (item.name || item.itemName || '').toLowerCase();
                             if (!nm || nm.indexOf(q) < 0 || seen[item.templateId]) continue;
-                            seen[item.templateId] = true;
-                            hits.push('<div style="padding:2px 6px;cursor:pointer;border-radius:3px" onmouseover="this.style.background=\'rgba(219,185,112,.1)\'" onmouseout="this.style.background=\'transparent\'" onclick="event.stopPropagation();var pids=state.autoDisposeProtectedIds||[];var tid=\'' + (item.templateId || '') + '\';if(pids.indexOf(tid)<0){pids.push(tid);state.autoDisposeProtectedIds=pids;persistSetting(\'lvSpiritCleaner.autoDisposeProtectedIds\',JSON.stringify(pids));window._renderProtectedList();}">' + (item.name || item.itemName || '?') + '<span style="color:#6a6560;margin-left:6px">' + (item.templateId||'') + '</span></div>');
+                            seen[item.templateId] = true; found = true;
+                            var div = document.createElement('div');
+                            div.textContent = (item.name || item.itemName || '?');
+                            div.style.cssText = 'padding:2px 6px;cursor:pointer;border-radius:3px';
+                            div.setAttribute('data-tid', String(item.templateId || ''));
+                            div.addEventListener('mouseover', function() { this.style.background = 'rgba(219,185,112,.1)'; });
+                            div.addEventListener('mouseout', function() { this.style.background = 'transparent'; });
+                            div.addEventListener('click', function() {
+                                var tid = this.getAttribute('data-tid');
+                                if (!tid) return;
+                                var pids = Array.isArray(state.autoDisposeProtectedIds) ? state.autoDisposeProtectedIds.slice() : [];
+                                if (pids.indexOf(tid) < 0) {
+                                    pids.push(tid);
+                                    state.autoDisposeProtectedIds = pids;
+                                    persistSetting('lvSpiritCleaner.autoDisposeProtectedIds', JSON.stringify(pids));
+                                    window._renderProtectedList();
+                                }
+                            });
+                            searchResults.appendChild(div);
                         }
-                        searchResults.innerHTML = hits.length ? hits.join('') : '<div style="color:var(--text-muted)">无结果</div>';
+                        if (!found) searchResults.innerHTML = '<div style="color:var(--text-muted);padding:2px 6px">无结果</div>';
                     } catch (_) { searchResults.innerHTML = '搜索失败'; }
                 });
                 searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') searchBtn.click(); });
