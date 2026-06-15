@@ -6381,16 +6381,16 @@
                 window._renderProtectedList = function() {
                     var el = document.getElementById('lvscDisposeProtectedList'); if (!el) return;
                     var items = Array.isArray(state.autoDisposeProtected) ? state.autoDisposeProtected : [];
-                    if (!items.length) { el.innerHTML = '保护列表：空'; return; }
-                    var html = '保护：';
+                    if (!items.length) { el.innerHTML = ''; return; }
+                    var html = '<span style="font-size:10px;color:var(--text-muted)">保护 ' + items.length + ' 种：</span>';
                     for (var _i = 0; _i < items.length; _i++) {
                         var it = items[_i];
                         var tid = typeof it === 'string' ? it : it.id;
-                        var tname = typeof it === 'string' ? '' : (it.name || '');
-                        html += '<span style="padding:0 4px;background:rgba(107,201,160,.1);color:#6bc9a0;border-radius:3px;margin:0 2px;font-size:10px">' + (tname || tid) + ' <span style="color:#6a6560">' + tid + '</span><span data-delidx="' + _i + '" style="color:#ff6b6b;cursor:pointer;margin-left:2px">✕</span></span>';
+                        var tname = typeof it === 'string' ? '' : (it.name || tid);
+                        html += '<span style="padding:1px 5px;background:rgba(107,201,160,.1);color:#6bc9a0;border-radius:3px;margin:1px 2px;font-size:10px;display:inline-block" title="' + tid + '">' + tname + '<span data-delidx="' + _i + '" style="color:#ff6b6b;cursor:pointer;margin-left:3px">✕</span></span>';
                     }
+                    html += ' <span style="color:#ff6b6b;cursor:pointer;font-size:10px" id="lvscClearProtect">清空</span>';
                     el.innerHTML = html;
-                    // 用事件委托处理删除
                     el.querySelectorAll('[data-delidx]').forEach(function(sp) {
                         sp.addEventListener('click', function() {
                             var idx = parseInt(this.getAttribute('data-delidx'));
@@ -6400,6 +6400,12 @@
                             persistSetting('lvSpiritCleaner.autoDisposeProtected', JSON.stringify(arr));
                             window._renderProtectedList();
                         });
+                    });
+                    var clearBtn = document.getElementById('lvscClearProtect');
+                    if (clearBtn) clearBtn.addEventListener('click', function() {
+                        state.autoDisposeProtected = [];
+                        persistSetting('lvSpiritCleaner.autoDisposeProtected', '[]');
+                        window._renderProtectedList();
                     });
                 };
                 window._renderProtectedList();
