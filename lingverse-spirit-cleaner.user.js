@@ -126,7 +126,7 @@
     }
     var _craftStats = { total: 0, startCount: 0 };
     async function autoCraftLoop() {
-        if (autoCraftRunning || running || autoInscriptionRunning) { setStatus('其他流程运行中', 'warn'); return; }
+        if (autoCraftRunning) { setStatus('炼制已在运行', 'warn'); return; }
         syncSettingsFromUi();
         if (!state.craftRecipeId || !gameApi()) { setStatus('请先选择配方', 'warn'); return; }
         autoCraftRunning = true;
@@ -242,7 +242,7 @@
         _lastMeditateReport = 0;
         var p = getPlayer() || {};
         _cleanStats.startRealm = p.realm || p.realmName || '';
-        _cleanStats.startRealmPct = parseFloat(p.realmProgress || p.progress || 0) || 0;
+        _cleanStats.startRealmPct = p.cultivationNeeded > 0 ? (p.cultivation || 0) / p.cultivationNeeded * 100 : 0;
         var info = getSpiritInfo();
         _cleanStats.startSpirit = info.maxSpirit || 0;
     }
