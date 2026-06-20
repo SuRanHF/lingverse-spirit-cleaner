@@ -11,7 +11,7 @@
     "高级冥想加15分钟冷却",
     "通知显示境界+刷新倒计时"
   ],
-  "downloadUrl": "https://gitee.com/wanoujj/lingverse-spirit-cleaner/raw/main/lingverse-spirit-cleaner.user.js?v=1.6.3",
+"downloadUrl": "https://gitee.com/wanoujj/lingverse-spirit-cleaner/raw/main/versions/lingverse-spirit-cleaner-v1.6.3.user.js",
   "changelog": [
     { "version": "1.6.3", "title": "自动回血+定时刷新+异常自启", "notes": ["自动回血(耗灵)", "灵兽自动回血", "自动刷新页面", "异常自启", "刷新后自启", "神识输入改百分比", "高级冥想15分钟冷却", "通知显示境界+刷新倒计时"] },
     { "version": "1.6.2", "title": "洗炼石升品+换装同步+多项修复", "notes": ["洗炼石一键升品", "换装原生API+方案名同步", "启动切战斗套", "恢复优先级不丢失", "铭文装备名自动抓取", "排序按启用顺序"] },
