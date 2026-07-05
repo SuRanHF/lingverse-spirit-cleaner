@@ -5671,7 +5671,7 @@ function stop(reason) {
             panel.style.bottom = 'auto';
         }
     }
-    function initSectionCollapse(){(document.querySelector('#lvscPanel')||document).addEventListener('click',function(ev){var row=ev.target.closest('.lvsc-section-title,.lvsc-section-title-row');if(!row)return;if(ev.target.closest('label')||ev.target.closest('input')||ev.target.closest('button')||ev.target.closest('select'))return;var sec=row.closest('.lvsc-section');if(!sec)return;var cs=[];sec.querySelectorAll(':scope>.lvsc-section-title,:scope>.lvsc-section-title-row').forEach(function(t){cs.push(t)});var idx=cs.indexOf(row);var nx=cs[idx+1];var els=[];var e=row.nextElementSibling;while(e&&e!==nx){els.push(e);e=e.nextElementSibling}var cp=row.classList.toggle('lvsc-title-collapsed');els.forEach(function(c){c.style.display=cp?'none':''})})}
+    function initSectionCollapse(){var p=document.querySelector('#lvscPanel')||document;if(!p._lvscCR){p._lvscCR=1;p.addEventListener('click',function(ev){var r=ev.target.closest('.lvsc-section-title,.lvsc-section-title-row');if(!r)return;if(ev.target.closest('label,input,button,select'))return;var s=r.closest('.lvsc-section');if(!s)return;var cs=[];s.querySelectorAll(':scope>.lvsc-section-title,:scope>.lvsc-section-title-row').forEach(function(t){cs.push(t)});var i=cs.indexOf(r),nx=cs[i+1],el=[],e=r.nextElementSibling;while(e&&e!==nx){el.push(e);e=e.nextElementSibling}var cp=r.classList.toggle('lvsc-title-collapsed');el.forEach(function(c){c.style.display=cp?'none':''});var ttl=r.querySelector('span');var txt=ttl?ttl.textContent.trim():'';var ck='lvscCS';var sv={};try{sv=JSON.parse(localStorage.getItem(ck)||'{}')}catch(_){}sv['c_'+txt]=cp;localStorage.setItem(ck,JSON.stringify(sv))})}var ck='lvscCS',sv={};try{sv=JSON.parse(localStorage.getItem(ck)||'{}')}catch(_){}document.querySelectorAll('.lvsc-section').forEach(function(sec){var r=sec.querySelector(':scope>.lvsc-section-title,:scope>.lvsc-section-title-row');if(!r)return;var ttl=r.querySelector('span');var txt=ttl?ttl.textContent.trim():'';var sc=sv['c_'+txt];sc=sc!==undefined?sc:true;if(sc){r.classList.add('lvsc-title-collapsed');var cs=[];sec.querySelectorAll(':scope>.lvsc-section-title,:scope>.lvsc-section-title-row').forEach(function(t){cs.push(t)});var i=cs.indexOf(r),nx=cs[i+1],e=r.nextElementSibling;while(e&&e!==nx){e.style.display='none';e=e.nextElementSibling}}})}
     function restorePanelSize(panel) {
         var savedWidth = Number(localStorage.getItem('lvSpiritCleaner.panelWidth'));
         var savedHeight = Number(localStorage.getItem('lvSpiritCleaner.panelHeight'));
@@ -6458,21 +6458,21 @@ function stop(reason) {
             '<button class="lvsc-tab" data-tab="update">更新</button>' +
             '</div>' +
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="explore">' +
-            '<div class="lvsc-category-title">基础清理</div>' +
-            '<div class="lvsc-field-grid">' +
+            '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row\"><span>基础清理</span></div><div class=\"lvsc-field-grid\">' +
             '<label>保留神识<input id="lvscReserve" type="number" min="0" step="1"></label>' +
             '<label>间隔毫秒<input id="lvscDelay" type="number" min="600" step="100"></label>' +
             '<label>监测到神识(%)<input id="lvscMonitorStartSpirit" type="number" min="0" max="100" step="1" title="填 0-100，表示神识上限的百分比，0=满了再清"></label>' +
             '<label>优先倍率<select id="lvscPreferMultiplier"><option value="1">×1</option><option value="2">×2</option><option value="5">×5</option><option value="10">×10</option><option value="20">×20</option><option value="50">×50</option></select></label>' +
             '<label class="lvsc-check"><input id="lvscKeepMultiplier" type="checkbox">使用当前探索倍率</label>' +
             '</div>' +
+            '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAggressiveMode\" type=\"checkbox\">⚔ 激进模式（遇怪直接打，不找护道，更快但更险）</label>' +
             '<div class="lvsc-category" style="border:1px solid rgba(100,200,255,.25);padding:10px;border-radius:9px;margin-top:4px;background:rgba(100,200,255,.04)">' +
             '<div class="lvsc-category-title" style="color:#64c8ff;">自动刷新(间隔为0关闭)</div>' +
             '<div id="lvscReloadCountdown" style="font-size:12px;color:#64c8ff;text-align:center;padding:4px 0;font-weight:bold">已关闭自动刷新</div>' +
             '<div class="lvsc-field-grid">' +
             '<label>间隔（分钟）<input id="lvscAutoReloadMin" type="number" min="0" step="1"></label>' +
             '</div>' +
-            '</div>' +
+            '</div></div>' +
             '</div>' +
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="merchant">' +
             '<div class="lvsc-section"><div class="lvsc-section-title-row"><span>护道</span></div>' +
@@ -6766,7 +6766,6 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         restorePanelSize(panel);
         makePanelDraggable(panel);
         makePanelResizable(panel);
-        initSectionCollapse();
 
         document.getElementById('lvscReserve').value = String(state.reserve);
         document.getElementById('lvscDelay').value = String(state.delayMs);
@@ -8219,14 +8218,6 @@ setInterval(function() {
                 prt.parentElement.insertBefore(lbl, prt.nextSibling);
             })();
 
-            // ---------- 激进模式 → explore tab ----------
-            (function() {
-                var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
-                var s = sec('战斗模式');
-                s.innerHTML = '<label class="lvsc-check" style="font-size:11px"><input id="lvscAggressiveMode" type="checkbox">⚔ 激进模式（遇怪直接打，不找护道，更快但更险）</label>';
-                ep.insertBefore(s, ep.firstChild);
-            })();
-
             // ---------- 已开启功能摘要 → explore tab ----------
             (function() {
                 var ep = document.querySelector('[data-tab-panel="explore"]'); if (!ep) return;
@@ -8530,6 +8521,7 @@ setInterval(function() {
                 if (swStart) swStart.onclick = function() { this.style.display = 'none'; document.getElementById('lvscSweepStopBtn').style.display = ''; autoSweepLoop(); };
                 var swStop = document.getElementById('lvscSweepStopBtn'); if (swStop) swStop.onclick = stopSweep;
             }, 100);
+    initSectionCollapse();
             // ---------- 自动登录 → auto ----------
 (function() {
     var p = document.querySelector('[data-tab-panel="auto"]'); if (!p) return;
