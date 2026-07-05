@@ -1691,6 +1691,10 @@ nirvanaCraftQty: readNumber('lvSpiritCleaner.nirvanaCraftQty', 1),
     }
 
     function gameApi() {
+        // 登录页不调用游戏API，防止401触发页面重定向死循环
+        if ((location.pathname === '/' || location.pathname === '') && !document.getElementById('exploreBtn')) {
+            return null;
+        }
         return (typeof api !== 'undefined') ? api : window.api;
     }
     // 自动灵宠回血
@@ -6851,9 +6855,14 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             if (el) return el.textContent.trim();
             return '';
         }
-        setTimeout(refreshEquipmentSelect, 1500);
+        // 登录页跳过，防止API 401触发重定向死循环
+        if (location.pathname !== '/' && location.pathname !== '') {
+            setTimeout(refreshEquipmentSelect, 1500);
+        }
         document.getElementById('lvscRefreshEquipment').onclick = refreshEquipmentSelect;
-        setTimeout(refreshEquipmentSelect, 1500);
+        if (location.pathname !== '/' && location.pathname !== '') {
+            setTimeout(refreshEquipmentSelect, 1500);
+        }
         document.getElementById('lvscInscriptionQuality').value = String(state.inscriptionQuality);
         document.getElementById('lvscInscriptionStat').value = String(state.inscriptionStat);
         document.getElementById('lvscInscriptionMinValue').value = localStorage.getItem('lvSpiritCleaner.inscriptionMinValue') || '50';
@@ -7065,7 +7074,8 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             if (state.craftRecipeId && !sel.value) sel.value = state.craftRecipeId;
         }
         document.getElementById('lvscRefreshRecipes').onclick = refreshCraftRecipes;
-        setTimeout(refreshCraftRecipes, 1500);
+        // 登录页跳过，防止API 401触发重定向死循环
+        if (location.pathname !== '/' && location.pathname !== '') { setTimeout(refreshCraftRecipes, 1500); }
         document.getElementById('lvscAutoCraftBtn').onclick = function () {
             if (autoCraftRunning) return;
             document.getElementById('lvscAutoCraftBtn').style.display = 'none';
@@ -7669,7 +7679,10 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
 
         setPanelCollapsed(panel, localStorage.getItem('lvSpiritCleaner.collapsed') === '1');
         activatePanelTab(localStorage.getItem('lvSpiritCleaner.activeTab') || 'explore');
-        refreshPlayer();
+        // 登录页不调用玩家API，防止401触发重定向死循环
+        if (location.pathname !== '/' && location.pathname !== '') {
+            refreshPlayer();
+        }
         loadAreaNameCache();
         showBuiltinReleaseOnce();
         hookAntiCheatAutoSolve();
@@ -8481,6 +8494,10 @@ setInterval(function() {
     if (enEl) { enEl.checked = localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1'; enEl.onchange = save; }
 window._lvscAutoLogin = function() {
     if (!enEl || !enEl.checked) return;
+    // 防止无限刷新循环：10秒内不重复尝试自动登录
+    var _lastTry = Number(sessionStorage.getItem('lvscAutoLoginTry')) || 0;
+    if (Date.now() - _lastTry < 10000) { console.log('[LingVerse] 自动登录防重复触发，跳过'); return; }
+    sessionStorage.setItem('lvscAutoLoginTry', String(Date.now()));
     var e = emailEl ? emailEl.value.trim() : '', pw = passEl ? passEl.value : '';
     if (!e || !pw) return;
     setTimeout(function() {
@@ -8531,7 +8548,16 @@ window._lvscAutoLogin = function() {
         };
     }
 }
-
+    // 登录页防无限循环：上次刷新在30秒内的跳过自动刷新
+    if (location.pathname === '/' || location.pathname === '') {
+        var _pageReload = Number(sessionStorage.getItem('lvscReloadGuard')) || 0;
+        if (_pageReload > 0 && Date.now() - _pageReload < 30000) {
+            var _rm = Number(localStorage.getItem('lvSpiritCleaner.autoReloadMin')) || 0;
+            console.warn('[LingVerse] 登录页距上次刷新不足30秒，跳过自动刷新');
+        } else {
+            sessionStorage.setItem('lvscReloadGuard', String(Date.now()));
+        }
+    }
     function waitForGame() {
         if (document.body && (window.api || window._lastPlayerData || document.getElementById('exploreBtn') || location.pathname === '/' || location.pathname === '')) {
             try { buildPanel(); } catch (err) { console.warn('[LingVerse] 面板加载失败，2秒后重试:', err); setTimeout(waitForGame, 2000); return; }
@@ -8565,19 +8591,10 @@ if (localStorage.getItem('lvSpiritCleaner.washStoneUpgradeRunning') === '1') {
 if (localStorage.getItem('lvSpiritCleaner.nirvanaAutoTimer') === '1' && state.nirvanaAutoTimer) {
     setTimeout(function() { startAutoNirvanaTimer(); }, 2000);
 }
-// 如果当前是登录页且启用了自动登录，优先执行自动登录（避免自动刷新打断）
-if (!window.api && !window._lastPlayerData && location.pathname === '/' && localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1') {
-    var _autoEmail = localStorage.getItem('lvSpiritCleaner.autoLoginEmail') || '';
-    var _autoPass = localStorage.getItem('lvSpiritCleaner.autoLoginPassword') || '';
-    if (_autoEmail && _autoPass && window._lvscAutoLogin) {
-        window._lvscAutoLogin();
-    }
-}
 // === 自动刷新（登录页且启用自动登录时禁用）===
 var _reloadMin = Number(localStorage.getItem('lvSpiritCleaner.autoReloadMin')) || 0;
-// 登录页 → 禁用自动刷新，避免打断登录流程
-var _isLoginPage = !window.api && !window._lastPlayerData && (location.pathname === '/' || location.pathname === '');
-if (_reloadMin > 0 && !_isLoginPage) {
+// 登录页 → 允许自动刷新
+if (_reloadMin > 0) {
                 var _lastReload = Number(localStorage.getItem('lvSpiritCleaner.lastReloadTime')) || 0;
                 var _now = Date.now();
                 if (_lastReload === 0) {
@@ -8596,10 +8613,8 @@ if (_reloadMin > 0 && !_isLoginPage) {
 (function triggerReload() {
     var min = Number(localStorage.getItem('lvSpiritCleaner.autoReloadMin')) || 0;
     if (min <= 0) { _cdEl.textContent = '已关闭自动刷新'; return; }
-    // 登录页 + 已开启自动登录 → 暂停自动刷新，避免打断登录流程
-    // 登录页 → 暂停自动刷新，避免打断登录流程
-    var _isLoginPage = !window.api && !window._lastPlayerData && (location.pathname === '/' || location.pathname === '');
-    if (_isLoginPage) { _cdEl.textContent = '登录中，自动刷新已暂停'; return; }    var last = Number(localStorage.getItem('lvSpiritCleaner.lastReloadTime')) || 0;
+    var last = Number(localStorage.getItem('lvSpiritCleaner.lastReloadTime')) || 0;
+    if (last === 0) { _cdEl.textContent = '等待首次计时...'; return; }
                     var remain = last + min * 60 * 1000 - Date.now();
                     if (remain <= 0) {
                         localStorage.setItem('lvSpiritCleaner.lastReloadTime', String(Date.now()));
@@ -8616,10 +8631,8 @@ if (_reloadMin > 0 && !_isLoginPage) {
 setInterval(function() {
     var min = Number(localStorage.getItem('lvSpiritCleaner.autoReloadMin')) || 0;
     if (min <= 0) { _cdEl.textContent = '已关闭自动刷新'; return; }
-    // 登录页 + 已开启自动登录 → 暂停自动刷新，避免打断登录流程
-    // 登录页 → 暂停自动刷新，避免打断登录流程
-    var _isLoginPage = !window.api && !window._lastPlayerData && (location.pathname === '/' || location.pathname === '');
-    if (_isLoginPage) { _cdEl.textContent = '登录中，自动刷新已暂停'; return; }    var last = Number(localStorage.getItem('lvSpiritCleaner.lastReloadTime')) || 0;
+    var last = Number(localStorage.getItem('lvSpiritCleaner.lastReloadTime')) || 0;
+    if (last === 0) { _cdEl.textContent = '等待首次计时...'; return; }
                     var remain = last + min * 60 * 1000 - Date.now();
                     if (remain <= 0) {
                         localStorage.setItem('lvSpiritCleaner.lastReloadTime', String(Date.now()));
