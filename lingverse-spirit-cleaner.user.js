@@ -4593,7 +4593,7 @@ for (var i = 0; i < invRes.data.length; i++) {
             log.textContent = log.textContent.substring(0, 8000);
         }
     }
-        function masterLog(message) {
+    function masterLog(message) {
         var log = document.getElementById('lvscMasterLog');
         if (!log) return;
         var time = new Date().toLocaleTimeString();
@@ -4601,7 +4601,14 @@ for (var i = 0; i < invRes.data.length; i++) {
         if (log.textContent.length > 8000) {
             log.textContent = log.textContent.substring(0, 8000);
         }
+        // 保存到localStorage最多50条，刷新不清空
+        var logs = [];
+        try { logs = JSON.parse(localStorage.getItem('lvscMasterLogArr') || '[]'); } catch(_) {}
+        logs.unshift('[' + time + '] ' + message);
+        if (logs.length > 50) logs = logs.slice(0, 50);
+        localStorage.setItem('lvscMasterLogArr', JSON.stringify(logs));
     }
+
     function craftLog(message) {
         var log = document.getElementById('lvscCraftLog');
         if (!log) return;
@@ -6650,10 +6657,10 @@ function stop(reason) {
             '</select>' +
             '</div>' +
             '<div style=\"margin:2px 0 2px 22px;display:flex;align-items:center;gap:6px;flex-wrap:wrap\">' +
-            '<span style=\"font-size:11px;color:#dbb970\">赠物-选徒弟：</span>' +
+            '<span id=\"lvscToggleGiftItemsDisciple\" style=\"font-size:11px;color:#dbb970;cursor:pointer\">▶ 赠物-选徒弟：</span>' +
             '<button id=\"lvscRefreshGiftItemsDiscipleList\" style=\"height:24px;padding:0 8px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1);border-radius:6px;font-size:10px;cursor:pointer\">刷新</button>' +
             '</div>' +
-            '<div id=\"lvscGiftItemsDiscipleList\" style=\"margin:0 0 2px 22px;display:flex;flex-wrap:wrap;gap:4px;max-height:100px;overflow-y:auto;padding:4px;background:rgba(0,0,0,.15);border-radius:6px\"></div>' +
+            '<div id=\"lvscGiftItemsDiscipleList\" style=\"margin:0 0 2px 22px;display:none;flex-wrap:wrap;gap:4px;max-height:100px;overflow-y:auto;padding:4px;background:rgba(0,0,0,.15);border-radius:6px\"></div>' +
             '<label class=\"lvsc-check\"><input id=\"lvscAutoGiftStonesDaily\" type=\"checkbox\">每日自动一键赠灵石</label>' +
             '<div style=\"margin:2px 0 2px 22px;display:flex;align-items:center;gap:6px;flex-wrap:wrap\">' +
             '<span style=\"font-size:11px;color:#aaa\">全部相同灵石数量：</span>' +
@@ -6667,10 +6674,10 @@ function stop(reason) {
             '</select>' +
             '</div>' +
             '<div style=\"margin:2px 0 2px 22px;display:flex;align-items:center;gap:6px;flex-wrap:wrap\">' +
-            '<span style=\"font-size:11px;color:#dbb970\">赠灵石-选徒弟：</span>' +
+            '<span id=\"lvscToggleGiftStonesDisciple\" style=\"font-size:11px;color:#dbb970;cursor:pointer\">▶ 赠灵石-选徒弟：</span>' +
             '<button id=\"lvscRefreshGiftStonesDiscipleList\" style=\"height:24px;padding:0 8px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1);border-radius:6px;font-size:10px;cursor:pointer\">刷新</button>' +
             '</div>' +
-            '<div id=\"lvscGiftStonesDiscipleList\" style=\"margin:0 0 2px 22px;display:flex;flex-wrap:wrap;gap:4px;max-height:100px;overflow-y:auto;padding:4px;background:rgba(0,0,0,.15);border-radius:6px\"></div>' +
+            '<div id=\"lvscGiftStonesDiscipleList\" style=\"margin:0 0 2px 22px;display:none;flex-wrap:wrap;gap:4px;max-height:100px;overflow-y:auto;padding:4px;background:rgba(0,0,0,.15);border-radius:6px\"></div>' +
             '<div class=\"lvsc-help\">自动处理徒弟的问答解惑、护道突破、历练请求。授业每天自动一次。勾选冥想中断护道后：自动收功→接护道→恢复冥想。赠物/赠灵石每天各自动一次，勾选后生效。</div>' +
             '<div style=\"margin:2px 0;display:flex;gap:6px;align-items:center\"><span style=\"color:#ff6b6b;cursor:pointer;font-size:10px\" id=\"lvscClearGiftToday\">清空今日记录（重置赠物/赠灵石/授业）</span></div>' +
             '<div id=\"lvscMasterLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:var(--text-muted);background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
@@ -7371,6 +7378,22 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
                 container.innerHTML = '<span style="font-size:10px;color:#888">加载失败</span>';
             });
         }
+                // 选徒弟折叠切换
+        document.getElementById('lvscToggleGiftItemsDisciple').onclick = function() {
+            var list = document.getElementById('lvscGiftItemsDiscipleList');
+            if (!list) return;
+            var isHidden = list.style.display === 'none';
+            list.style.display = isHidden ? 'flex' : 'none';
+            this.textContent = isHidden ? '▼ 赠物-选徒弟：' : '▶ 赠物-选徒弟：';
+        };
+        document.getElementById('lvscToggleGiftStonesDisciple').onclick = function() {
+            var list = document.getElementById('lvscGiftStonesDiscipleList');
+            if (!list) return;
+            var isHidden = list.style.display === 'none';
+            list.style.display = isHidden ? 'flex' : 'none';
+            this.textContent = isHidden ? '▼ 赠灵石-选徒弟：' : '▶ 赠灵石-选徒弟：';
+        };
+
         document.getElementById('lvscRefreshGiftItemsDiscipleList').onclick = refreshGiftItemsDiscipleList;
         document.getElementById('lvscRefreshGiftStonesDiscipleList').onclick = refreshGiftStonesDiscipleList;
         document.getElementById('lvscGiftItemsMode').onchange = function() {
@@ -7393,6 +7416,15 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             localStorage.removeItem('lvscTeachDate');
             masterLog('🗑️ 已清空今日记录（赠物/赠灵石/授业可再次执行）');
         };
+        // 恢复日志
+        var savedLogs = [];
+        try { savedLogs = JSON.parse(localStorage.getItem('lvscMasterLogArr') || '[]'); } catch(_) {}
+        if (savedLogs.length) {
+            var logEl = document.getElementById('lvscMasterLog');
+            if (logEl) {
+                logEl.textContent = savedLogs.join('\n');
+            }
+        }
 
         // 物品搜索逻辑
         var giftSearchBtn = document.getElementById('lvscGiftItemSearchBtn');
