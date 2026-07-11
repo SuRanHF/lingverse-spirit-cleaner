@@ -475,7 +475,7 @@ function startAutoCraftTimer() {
     function skillWashLog(msg) { var l = document.getElementById('lvscSkillWashLog'); if (!l) return; var t = new Date().toLocaleTimeString(); l.textContent = '[' + t + '] ' + msg + '\n' + (l.textContent || ''); if (l.textContent.length > 4000) l.textContent = l.textContent.substring(0, 4000); }
     function washStoneLog(msg) { var l = document.getElementById('lvscWashStoneUpgradeLog'); if (!l) return; var t = new Date().toLocaleTimeString(); l.textContent = '[' + t + '] ' + msg + '\n' + (l.textContent || ''); if (l.textContent.length > 4000) l.textContent = l.textContent.substring(0, 4000); }
 
-    // --- 洗炼石一键升品（独立监控循环） ---
+    // --- 洗炼石一键升品（独立监控循环） --
     var autoWashStoneUpgradeRunning = false;
     async function autoUpgradeWashStonesLoop() {
         if (autoWashStoneUpgradeRunning) return;
