@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.6.4-dbb970?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/version-1.6.5-dbb970?style=for-the-badge" />
   <img src="https://img.shields.io/badge/platform-Tampermonkey-9be7c3?style=for-the-badge" />
   <img src="https://img.shields.io/badge/license-MIT-8f846f?style=for-the-badge" />
 </p>
