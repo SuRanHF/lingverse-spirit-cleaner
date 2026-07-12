@@ -6842,6 +6842,7 @@ function stop(reason) {
             '.lvsc-big-cat-title-row{background:rgba(219,185,112,.06);border-radius:6px;padding:4px 8px;margin:0 -4px}',
             '.lvsc-section-title-row.lvsc-title-collapsed>span::before{content:"▶ "}',
 'body .lvsc-section-content-hidden{display:none!important}',
+'body .lvsc-search-hidden{display:none!important}',
 '.lvsc-big-cat-title-row.lvsc-title-collapsed~*{display:none!important}',
             '.lvsc-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px}',
             '.lvsc-span2{grid-column:1 / -1}',
@@ -9262,53 +9263,72 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
         });
     };
         var _searchInput = document.getElementById('lvscSearchFunc');
-    if (_searchInput) _searchInput.oninput = function() {
-        var q = this.value.trim().toLowerCase();
-        // 先全部强制展开（移class绕过!important）
-        document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
-            r.classList.remove('lvsc-title-collapsed', 'lvsc-section-content-hidden');
-            r.style.display = '';
-            if (!r.classList.contains('lvsc-big-cat-title-row')) {
-                var el = r.nextElementSibling;
-                while (el && !el.classList.contains('lvsc-section-title-row')) {
-                    el.classList.remove('lvsc-section-content-hidden');
-                    el.style.display = '';
-                    el = el.nextElementSibling;
-                }
-            }
-        });
-        // 有搜索词时只按标题隐藏不匹配的
-        if (q) {
+    if (_searchInput) {
+        _searchInput.addEventListener('input', function() {
+            var q = this.value.trim().toLowerCase();
+            // 清除上一次搜索的隐藏标记 + 清除折叠class（只动class，不动 inline style）
+            document.querySelectorAll('.lvsc-search-hidden').forEach(function(el) { el.classList.remove('lvsc-search-hidden'); });
             document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
-                var title = r.textContent.trim().toLowerCase();
-                if (title.indexOf(q) === -1) {
-                    r.style.display = 'none';
-                    if (!r.classList.contains('lvsc-big-cat-title-row')) {
+                r.classList.remove('lvsc-title-collapsed');
+                if (!r.classList.contains('lvsc-big-cat-title-row')) {
+                    var el = r.nextElementSibling;
+                    while (el && !el.classList.contains('lvsc-section-title-row')) {
+                        el.classList.remove('lvsc-section-content-hidden');
+                        el = el.nextElementSibling;
+                    }
+                }
+            });
+            if (q) {
+                // 按区块文字匹配（标题行 + 内容区所有文字，big-cat 也要收内容）
+                document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
+                    var blockText = r.textContent || '';
+                    var el = r.nextElementSibling;
+                    while (el && !el.classList.contains('lvsc-section-title-row')) {
+                        blockText += ' ' + (el.textContent || '');
+                        el = el.nextElementSibling;
+                    }
+                    if (blockText.toLowerCase().indexOf(q) === -1) {
+                        r.classList.add('lvsc-search-hidden');
                         var el2 = r.nextElementSibling;
                         while (el2 && !el2.classList.contains('lvsc-section-title-row')) {
-                            el2.style.display = 'none';
+                            el2.classList.add('lvsc-search-hidden');
                             el2 = el2.nextElementSibling;
                         }
                     }
-                }
-            });
-        } else {
-            // 清空搜索时恢复折叠
-            document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
-                var v = localStorage.getItem('lvscCS_' + r.textContent.trim());
-                if (v !== '0') {
-                    r.classList.add('lvsc-title-collapsed');
-                    if (!r.classList.contains('lvsc-big-cat-title-row')) {
-                        var el = r.nextElementSibling;
-                        while (el && !el.classList.contains('lvsc-section-title-row')) {
-                            el.classList.add('lvsc-section-content-hidden');
-                            el = el.nextElementSibling;
+                });
+                // 修正 big-cat：有可见子标题的把已隐藏的 big-cat 重新显示出来
+                document.querySelectorAll('.lvsc-section-title-row.lvsc-big-cat-title-row').forEach(function(bigCat) {
+                    if (!bigCat.classList.contains('lvsc-search-hidden')) return;
+                    var anyVisible = false;
+                    var el = bigCat.nextElementSibling;
+                    while (el && !el.classList.contains('lvsc-big-cat-title-row')) {
+                        if (el.classList.contains('lvsc-section-title-row') && !el.classList.contains('lvsc-search-hidden')) {
+                            anyVisible = true;
+                            break;
+                        }
+                        el = el.nextElementSibling;
+                    }
+                    if (anyVisible) bigCat.classList.remove('lvsc-search-hidden');
+                });
+            } else {
+                // 清空搜索：清除所有搜索隐藏标记，恢复折叠状态
+                document.querySelectorAll('.lvsc-search-hidden').forEach(function(el) { el.classList.remove('lvsc-search-hidden'); });
+                document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
+                    var v = localStorage.getItem('lvscCS_' + r.textContent.trim());
+                    if (v !== '0') {
+                        r.classList.add('lvsc-title-collapsed');
+                        if (!r.classList.contains('lvsc-big-cat-title-row')) {
+                            var el = r.nextElementSibling;
+                            while (el && !el.classList.contains('lvsc-section-title-row')) {
+                                el.classList.add('lvsc-section-content-hidden');
+                                el = el.nextElementSibling;
+                            }
                         }
                     }
-                }
-            });
-        }
-    };
+                });
+            }
+        });
+    }
 }
     // 登录页防无限循环：上次刷新在30秒内的跳过自动刷新
     if (location.pathname === '/' || location.pathname === '') {
