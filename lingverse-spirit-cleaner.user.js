@@ -7236,6 +7236,8 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         document.getElementById('lvscHireMode').value = String(state.hireMode);
         document.getElementById('lvscHireMaxFee').value = String(state.hireMaxFee);
         document.getElementById('lvscNoMasterProtector').checked = state.noMasterProtector;
+        document.getElementById('lvscAutoMysteryBox').checked = state.autoMysteryBox;
+        renderMysteryBoxLog();
         document.getElementById('lvscKeepMultiplier').checked = state.keepCurrentMultiplier;
         document.getElementById('lvscMerchantMode').value = String(state.merchantMode);
         document.getElementById('lvscMerchantKeyword').value = String(state.merchantKeyword);
@@ -7917,7 +7919,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         var giftSearchResults = document.getElementById('lvscGiftItemSearchResults');
         giftSearchBtn.addEventListener('click', async function() {
             var q = (giftSearchInput.value || '').trim().toLowerCase();
-            if (!q) { giftSearchResults.style.display = 'none'; return; }
+            if (!q) return;
             giftSearchResults.style.display = 'block';
             giftSearchResults.innerHTML = '搜索中...';
             try {
@@ -7965,7 +7967,6 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             } catch (_) { giftSearchResults.innerHTML = '搜索失败'; }
         });
         if (giftSearchInput) giftSearchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter' && giftSearchBtn) giftSearchBtn.click(); });
-        if (giftSearchInput) giftSearchInput.addEventListener('input', function() { if (!this.value.trim()) giftSearchResults.style.display = 'none'; });
         } catch(e) {}
         document.getElementById('lvscHiddenCharmBtn').onclick = function () {
             ensureHiddenCharm(true);
@@ -7990,6 +7991,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         onSel('lvscHireMode', 'hireMode', ['cheapest', 'together', 'alone']);
         onNum('lvscHireMaxFee', 'hireMaxFee', 0);
         onChk('lvscNoMasterProtector', 'noMasterProtector');
+        onChk('lvscAutoMysteryBox', 'autoMysteryBox');
         onChkAlt('lvscKeepMultiplier', 'keepCurrentMultiplier', 'lvSpiritCleaner.keepMultiplier');
         document.getElementById('lvscPreferMultiplier').value = state.preferMultiplier;
         document.getElementById('lvscPreferMultiplier').onchange = function () { state.preferMultiplier = this.value; persistSetting('lvSpiritCleaner.preferMultiplier', this.value); };
@@ -8612,7 +8614,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 var _searchCache = [];
                 searchBtn.addEventListener('click', async function() {
                     var q = (searchInput.value || '').trim().toLowerCase();
-                    if (!q) { searchResults.style.display = 'none'; return; }
+                    if (!q) return;
                     searchResults.style.display = 'block';
                     searchResults.innerHTML = '搜索中...';
                     try {
@@ -8707,7 +8709,6 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                     } catch (_) { searchResults.innerHTML = '搜索失败'; }
                 });
                 searchInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') searchBtn.click(); });
-                searchInput.addEventListener('input', function() { if (!this.value.trim()) searchResults.style.display = 'none'; });
                 // 渲染保护列表（品质分组）
                 window._renderProtectedList = function() {
                     var el = document.getElementById('lvscDisposeProtectedList'); if (!el) return;
