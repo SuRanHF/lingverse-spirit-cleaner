@@ -3401,15 +3401,52 @@ for (var i = 0; i < invRes.data.items.length; i++) {
         }
 
         if (state.noCrossRealmFight) {
-            var playerRealm = Number(p.realmLevel || 0);
-            var monsterRealm = Number(encounterData.monsterRealmLevel || 0);
-            var gap = Number(state.noCrossRealmGap || 0);
-            if (monsterRealm - playerRealm >= gap) {
-                return {
-                    safe: false,
-                    reason: '妖兽境界过高（不越阶：差距' + (monsterRealm - playerRealm) + ' ≥ 上限' + gap + '）',
-                    summary: '自身境界 ' + playerRealm + '；妖兽境界 ' + monsterRealm + '；允许越阶上限 ' + gap
-                };
+            var REALM_MAJOR = ['锻体期','练气期','筑基期','金丹期','元婴期','化神期','炼虚期','合道期','大乘期','渡劫期','真仙境','玄仙境','上仙境','天仙境','仙君境','仙王境','仙帝境','仙尊境','仙祖境','圣人境'];
+            var REALM_MINOR_SUFFIX = ['一重','二重','三重','四重','五重','六重','七重','八重','九重','一层','二层','三层','四层','五层','六层','七层','八层','九层','前期','初期','中期','后期','大圆满','一劫仙人','二劫仙人','三劫仙人','四劫仙人','五劫仙人','六劫仙人','七劫仙人','八劫仙人','九劫仙人','十劫仙人'];
+            var REALM_MINOR_IDX = { '一重':0,'二重':1,'三重':2,'四重':3,'五重':4,'六重':5,'七重':6,'八重':7,'九重':8, '一层':0,'二层':1,'三层':2,'四层':3,'五层':4,'六层':5,'七层':6,'八层':7,'九层':8, '前期':0,'初期':0,'中期':1,'后期':2,'大圆满':3, '一劫仙人':0,'二劫仙人':1,'三劫仙人':2,'四劫仙人':3,'五劫仙人':4,'六劫仙人':5,'七劫仙人':6,'八劫仙人':7,'九劫仙人':8,'十劫仙人':9 };
+
+            function __parseMajorRealm(fullName) {
+                var best = null, bestLen = 0;
+                for (var i = 0; i < REALM_MAJOR.length; i++) {
+                    var r = REALM_MAJOR[i];
+                    if (fullName.indexOf(r) === 0 && r.length > bestLen) { best = r; bestLen = r.length; }
+                }
+                return best;
+            }
+
+            function __parseMinorIdx(fullName, majorName) {
+                var suffix = fullName.substring(majorName.length);
+                if (REALM_MINOR_IDX.hasOwnProperty(suffix)) return REALM_MINOR_IDX[suffix];
+                return -1;
+            }
+
+            var playerMajor = (p.realmName || '').trim();
+            var playerMajorIdx = REALM_MAJOR.indexOf(playerMajor);
+            var playerMinorIdx = Number(p.realmLevel || 0);
+
+            var monsterFull = (encounterData.monsterRealmName || '').trim();
+            var monsterMajor = __parseMajorRealm(monsterFull);
+            var monsterMajorIdx = monsterMajor ? REALM_MAJOR.indexOf(monsterMajor) : -1;
+            var monsterMinorIdx = monsterMajor ? __parseMinorIdx(monsterFull, monsterMajor) : -1;
+
+            if (monsterMajorIdx >= 0 && playerMajorIdx >= 0) {
+                if (monsterMajorIdx > playerMajorIdx) {
+                    return {
+                        safe: false,
+                        reason: '妖兽大境界过高（不越阶：' + monsterMajor + ' > ' + playerMajor + '）',
+                        summary: '自身 ' + playerMajor + '；妖兽 ' + monsterMajor + '；禁止跨大境界'
+                    };
+                }
+                if (monsterMajorIdx === playerMajorIdx && monsterMinorIdx >= 0 && playerMinorIdx >= 0) {
+                    var gap = Number(state.noCrossRealmGap || 0);
+                    if (monsterMinorIdx - playerMinorIdx >= gap) {
+                        return {
+                            safe: false,
+                            reason: '妖兽小境界过高（不越阶：差距' + (monsterMinorIdx - playerMinorIdx) + ' ≥ 上限' + gap + '）',
+                            summary: '自身 ' + playerMajor + ' 小阶' + playerMinorIdx + '；妖兽 小阶' + monsterMinorIdx + '；允许越阶上限 ' + gap
+                        };
+                    }
+                }
             }
         }
 
