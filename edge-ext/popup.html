@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:260px;background:#1a1a2e;color:#e8e0d0;font:13px "Microsoft YaHei",sans-serif;padding:16px}
+h2{font-size:16px;color:#dbb970;text-align:center;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:12px}
+.btn{display:block;width:100%;margin-top:10px;padding:8px;border:0;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}
+.btn-check{background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)}
+.btn-update{background:linear-gradient(135deg,#dbb970,#f5d78a);color:#17141d}
+.btn-update:disabled{opacity:.5;cursor:default}
+.status{text-align:center;margin-top:8px;font-size:11px;color:#9b927f;min-height:16px}
+</style>
+</head>
+<body>
+<h2>⚙ 神识清理</h2>
+<div class="row"><span>当前版本</span><b id="curVer">-</b></div>
+<div class="row"><span>最新版本</span><b id="newVer">检查中...</b></div>
+<button class="btn btn-check" id="checkBtn">🔍 检查更新</button>
+<button class="btn btn-update" id="updateBtn" disabled>⬇ 一键更新</button>
+<div class="status" id="status"></div>
+<script src="popup.js"></script>
+</body>
+</html>

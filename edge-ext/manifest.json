@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "神识清理",
+  "version": "1.6.5",
+  "description": "灵界修仙全自动助手 — Edge 扩展版",
+  "icons": { "128": "icons/icon128.svg" },
+  "action": { "default_icon": { "128": "icons/icon128.svg" }, "default_title": "神识清理", "default_popup": "popup.html" },
+  "permissions": ["storage", "scripting", "cookies", "alarms", "notifications", "webRequest"],
+  "host_permissions": ["https://ling.muge.info/*", "https://unreclaimable-unyieldingly-coretta.ngrok-free.dev/*", "https://qyapi.weixin.qq.com/*", "https://gitee.com/*", "https://api.github.com/*", "https://raw.githubusercontent.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://ling.muge.info/game.html*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["script.js", "preinit.js", "patch.js"],
+      "matches": ["https://ling.muge.info/*"]
+    }
+  ]
+}
