@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LingVerse Spirit Cleaner
 // @namespace    local.lingverse.tools
-// @version      1.6.5
+// @version      1.6.6
 // @description  Authorized helper: spend LingVerse spirit, handle merchants, hire protectors, meditate, and maintain Void Body buff.
 // @match        https://ling.muge.info/*
 // @match        http://ling.muge.info/*
@@ -115,6 +115,7 @@
 
     var running = false;
     var monitoringSpirit = false;
+    var quickClearRunning = false;
     function persistRunning(v) { try { localStorage.setItem('lvSpiritCleaner.wasRunning', v ? '1' : '0'); } catch(_) {} }
     var autoTrialRunning = false;
     var autoTreasureRunning = false;
@@ -200,6 +201,7 @@ craftLog('开始炼制: ' + name + ' | 目标' + target + '次' + (autoBuy ? ' |
         var batchCap = state.craftBatchSize > 0 ? Math.min(state.craftBatchSize, gameCap) : gameCap;
         var crafted = 0;
         while (autoCraftRunning && crafted < target) {
+            var iterStart = Date.now();
             if (autoBuy && recipe.materials && recipe.materials.length) {
                 for (var mi = 0; mi < recipe.materials.length; mi++) {
                     var mat = recipe.materials[mi];
@@ -239,7 +241,8 @@ craftLog('开始炼制: ' + name + ' | 目标' + target + '次' + (autoBuy ? ' |
             for (var qk in qualityTally) { if (qualityTally.hasOwnProperty(qk)) parts.push(qk + '×' + qualityTally[qk]); }
             craftLog('炼+' + actualCount + ' | ' + Math.min(crafted, target) + '/' + target + (parts.length ? ' | ' + parts.join(' ') : ''));
             setStatus('炼制: ' + name + ' ' + crafted + '/' + target, 'run');
-            await sleep(600);
+            var remaining = Math.max(200, getCraftDelay() - (Date.now() - iterStart));
+            await sleep(remaining);
         }
         autoCraftRunning = false;
         updateMeter();
@@ -335,12 +338,12 @@ function startAutoCraftTimer() {
             return;
         }
         while (autoCraftRunning && qualMet < qualNeed) {
+            var iterStart = Date.now();
             if (autoBuy && recipe.materials && recipe.materials.length) {
                 for (var mi = 0; mi < recipe.materials.length; mi++) {
                     var mat = recipe.materials[mi];
                     var needed = Math.max(0, (mat.required || mat.amount || 1) * batchCap);
-                    if (needed > 0) { try { await gameApi().post('/api/game/craft/quick-buy-mats', { type: type, id: recipeId, amount: needed }); } catch (_) {} await sleep(1500 + Math.floor(Math.random() * 2500)); }
-                }
+                    if (needed > 0) { try { await gameApi().post('/api/game/craft/quick-buy-mats', { type: type, id: recipeId, amount: needed }); } catch (_) {} await sleep(300); }                }
             }
             var craftEp = type === 'alchemy' ? '/api/game/alchemy/batch-craft' : type === 'talisman' ? '/api/game/talisman/batch-craft' : '/api/game/forge/batch-craft';
             var craftKey = type === 'alchemy' ? 'pillId' : 'recipeId';
@@ -368,7 +371,8 @@ function startAutoCraftTimer() {
             }
             craftLog('炼+' + batchCap + ' | ' + QUAL_NAMES[qualTarget] + qualMet + '/' + qualNeed + ' | 总' + totalCrafted + '次');
             setStatus('品质炼制: ' + name + ' ' + QUAL_NAMES[qualTarget] + qualMet + '/' + qualNeed, 'run');
-            await sleep(1500 + Math.floor(Math.random() * 2500));
+            var remaining = Math.max(200, getCraftDelay() - (Date.now() - iterStart));
+            await sleep(remaining);
         }
         autoCraftRunning = false;
         updateMeter();
@@ -489,7 +493,18 @@ function startAutoCraftTimer() {
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = '';
         washStoneLog('洗炼石升品监控启动');
+        var firstCycle = true;
         while (autoWashStoneUpgradeRunning) {
+            if (firstCycle) {
+                firstCycle = false;
+                var interval = (state.washStoneMonitorInterval || 30) * 1000;
+                washStoneLog('── 首次启动，等待 ' + (state.washStoneMonitorInterval || 30) + ' 秒后开始检测 ──');
+                var waited = 0;
+                while (autoWashStoneUpgradeRunning && waited < interval) {
+                    await sleep(1000); waited += 1000;
+                }
+                if (!autoWashStoneUpgradeRunning) break;
+            }
             try {
                 var invRes = await gameApi().get('/api/game/inventory/category?tab=all&page=1&size=200');
                 if (!invRes || invRes.code !== 200 || !invRes.data || !Array.isArray(invRes.data.items)) { await sleep(3000); continue; }
@@ -550,8 +565,18 @@ function startAutoCraftTimer() {
         if (startBtn) startBtn.style.display = 'none';
         if (stopBtn) stopBtn.style.display = '';
         pillUpgradeLog('丹药升阶监控启动');
+        var firstCycle = true;
         while (autoPillUpgradeRunning) {
             var interval = (state.pillUpgradeMonitorInterval || 30) * 1000;
+            if (firstCycle) {
+                firstCycle = false;
+                pillUpgradeLog('── 首次启动，等待 ' + (state.pillUpgradeMonitorInterval || 30) + ' 秒后开始检测 ──');
+                var waited = 0;
+                while (autoPillUpgradeRunning && waited < interval) {
+                    await sleep(1000); waited += 1000;
+                }
+                if (!autoPillUpgradeRunning) break;
+            }
             try {
                 var upRes = await gameApi().get('/api/game/alchemy/upgradeable-pills');
                 if (!upRes || upRes.code !== 200 || !Array.isArray(upRes.data) || upRes.data.length === 0) {
@@ -599,8 +624,9 @@ function startAutoCraftTimer() {
     var recruitProcessedIds = {};
     var HIGH_FEE_CONFIRM_THRESHOLD = 500000;
     var PANEL_Z_INDEX = 2147483000;
+    var isPowerSave = false;
     var UPDATE_MODAL_Z_INDEX = 2147483001;
-    var SCRIPT_VERSION = '1.6.5';
+    var SCRIPT_VERSION = '1.6.6';
     var CLOUD_UPDATE_POLL_MS = 60000;
     var CLOUD_UPDATE_REMIND_MS = 300000;
     var CLOUD_UPDATE_TIMEOUT_MS = 10000;
@@ -813,6 +839,7 @@ if (current >= targetCount) {
 var needCraft = targetCount - current;
 
     while (autoNirvanaRunning && needCraft > 0) {
+        var iterStart = Date.now();
         var batchCount = batchSize;
         // 自动补充材料
         if (recipe.materials && recipe.materials.length) {
@@ -884,7 +911,8 @@ if (currentAfterCraft >= targetCount) {
 
     // 更新还需数量
     needCraft = Math.max(0, targetCount - currentAfterCraft);
-    await sleep(600);
+    var remaining = Math.max(200, getNirvanaDelay() - (Date.now() - iterStart));
+    await sleep(remaining);
 }
 
     autoNirvanaRunning = false;
@@ -935,6 +963,37 @@ async function ensureNirvanaPill() {
         };
         input.click();
     }
+    var CONFIG_EXCLUDE_KEYS = ['wasRunning','monitoringSpirit','farmRunning','disposeRunning','washStoneUpgradeRunning','pillUpgradeRunning','quickClearRunning','collapsed','activeTab','alwaysOnTop','chatOnTop','panelHeight','panelWidth','panelLeft','panelTop','embeddedWidth','seenBuiltinVersion','seenCloudVersion','lastCloudReminder','lastReloadTime','onlineClientId','monthlyCardLastDate','mysteryBoxLastDate','mysteryBoxOpenedToday','mysteryBoxLog','nirvanaNextTimerTime','nextAutoCraftTime','autoLoginEmail','autoLoginPassword','configSlotA','configSlotB','safeMode','safeModeBackup'];
+    function _isRuntimeKey(k) {
+        for (var i = 0; i < CONFIG_EXCLUDE_KEYS.length; i++) {
+            if (k.indexOf(CONFIG_EXCLUDE_KEYS[i]) !== -1) return true;
+        }
+        return false;
+    }
+    window.saveConfigToSlot = function saveConfigToSlot(slot) {
+        if (!confirm('将当前设置保存到槽位' + slot + '？（仅保存配置项，不含面板位置/运行状态等）')) return;
+        try {
+            var c = {}; var total = 0;
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.indexOf('lvSpiritCleaner.') === 0 && !_isRuntimeKey(k))
+                    { c[k] = localStorage.getItem(k); total++; }
+            }
+            localStorage.setItem('lvSpiritCleaner.configSlot' + slot, JSON.stringify(c));
+            setStatus('配置已保存到槽位' + slot + '（' + total + '项）', 'run');
+        } catch (e) { setStatus('保存失败: ' + e.message, 'warn'); }
+    };
+    window.loadConfigFromSlot = function loadConfigFromSlot(slot) {
+        if (!confirm('读取槽位' + slot + '的配置将覆盖当前设置并刷新，确定？')) return;
+        try {
+            var raw = localStorage.getItem('lvSpiritCleaner.configSlot' + slot);
+            if (!raw) { setStatus('槽位' + slot + '暂无保存的配置', 'warn'); return; }
+            var d = JSON.parse(raw); var cnt = 0;
+            for (var k in d) { if (!_isRuntimeKey(k)) { try { localStorage.setItem(k, d[k]); cnt++; } catch (_) {} } }
+            setStatus('从槽位' + slot + '读取了' + cnt + '项配置，刷新生效', 'run');
+            setTimeout(function() { location.reload(); }, 600);
+        } catch (e) { setStatus('读取槽位' + slot + '失败: ' + e.message, 'warn'); }
+    };
     var autoSweepRunning = false;
     var _sweepCount = 0, _sweepMaps = 0, _sweepCost = 0;
     var _lastLuckCheck = 0, _lastBreakCheck = 0, _lastOriginCheck = 0, _lastSellCheck = 0;
@@ -984,7 +1043,7 @@ async function ensureNirvanaPill() {
         l.textContent = '[' + t + '] ' + msg + '\n' + (l.textContent || '');
         if (l.textContent.length > 2000) l.textContent = l.textContent.substring(0, 2000);
     }
-    async function autoDisposeLoop() {
+      async function autoDisposeLoop() {
         if (autoDisposeRunning || !gameApi()) return;
         autoDisposeRunning = true;
         try { localStorage.setItem('lvSpiritCleaner.disposeRunning', '1'); } catch(_) {}
@@ -995,9 +1054,21 @@ async function ensureNirvanaPill() {
             if (startBtn) startBtn.style.display = 'none';
             if (stopBtn) stopBtn.style.display = '';
         } catch (_) {}
+        var firstCycle = true;
         while (autoDisposeRunning) {
             var rules = Array.isArray(state.autoDisposeRules) ? state.autoDisposeRules.slice() : [];
             if (!rules.length) { await sleep(5000); continue; }
+            
+            if (firstCycle) {
+                firstCycle = false;
+                disposeLog('── 首次启动，等待 ' + state.autoDisposeInterval + ' 秒后开始检测 ──');
+                var waited = 0;
+                while (autoDisposeRunning && waited < state.autoDisposeInterval * 1000) {
+                    await sleep(1000); waited += 1000;
+                }
+                if (!autoDisposeRunning) break;
+            }
+            
             disposeLog('── 开始一轮检测 ──');
             for (var ri = 0; ri < rules.length; ri++) {
                 if (!autoDisposeRunning) break;
@@ -1011,7 +1082,6 @@ async function ensureNirvanaPill() {
                     if (rule.action === 'sell') {
                         var p = { maxRarity: rule.maxRarity };
                         if (rule.scope !== 'all') p.scope = rule.scope;
-                        // 收集排除ID：锁定物品 + 用户手动保护
                         var excludedIds = [];
                         try {
                             var _inv = await gameApi().get('/api/game/inventory/category?tab=all&page=1&size=200');
@@ -1027,7 +1097,6 @@ async function ensureNirvanaPill() {
                             var _pid = typeof protItems[_pi] === 'string' ? protItems[_pi] : protItems[_pi].id;
                             if (_pid && excludedIds.indexOf(_pid) < 0) excludedIds.push(_pid);
                         }
-                        // 游戏默认排除名单（对话框里默认不勾的）
                         var DEFAULT_EXCLUDED = ['blank_scroll_1','blank_scroll_2','blank_scroll_3','blank_scroll_4','blank_scroll_5'];
                         for (var _di = 0; _di < DEFAULT_EXCLUDED.length; _di++) {
                             if (excludedIds.indexOf(DEFAULT_EXCLUDED[_di]) < 0) excludedIds.push(DEFAULT_EXCLUDED[_di]);
@@ -1071,7 +1140,7 @@ async function ensureNirvanaPill() {
                                     if (rule.scope === 'pill') return tid.indexOf('pill_') === 0 || tp === 'pill';
                                     if (rule.scope === 'scroll') return tid.indexOf('scroll_') === 0 || tid.indexOf('blank_scroll_') === 0 || tp === 'scroll';
                                     if (rule.scope === 'equip') return tp === 'equip';
-                                    if (rule.scope === 'misc') return tid.indexOf('talisman_') !== 0 && tid.indexOf('pill_') !== 0 && tid.indexOf('scroll_') !== 0 && tid.indexOf('blank_scroll_') !== 0 && tp !== 'equip' && tp !== 'talisman' && tp !== 'pill' && tp !== 'scroll';
+                                    if (rule.scope === 'misc') return tid.indexOf('talisman_') !== 0 && tid.indexOf('pill_') !== 0 && tid.indexOf('scroll_') !== 0 && tid.indexOf('blank_scroll_') === 0 && tp !== 'equip' && tp !== 'talisman' && tp !== 'pill' && tp !== 'scroll';
                                     return true;
                                 });
                                 if (filtered.length) {
@@ -1109,7 +1178,6 @@ async function ensureNirvanaPill() {
                 if (ok) await sleep(200);
             }
             if (!autoDisposeRunning) break;
-            // 自动凝聚碎片
             if (state.autoSynthesize) {
                 try {
                     var synRes = await gameApi().post('/api/game/items/synthesize-batch');
@@ -1199,7 +1267,7 @@ async function ensureNirvanaPill() {
         farmLog('开垦失败: ' + (r2 ? (r2.message || r2.code) : (r ? (r.message || r.code) : 'err')));
         return false;
     }
-    async function autoFarmLoop() { if (autoFarmRunning) return; autoFarmRunning = true; try { localStorage.setItem('lvSpiritCleaner.farmRunning', '1'); } catch(_) {} updateMeter(); farmLog('灵田监控启动'); while (autoFarmRunning) { try { var data = await farmOverview(); if (!data) { farmLog('获取灵田数据失败'); await sleep(10000); continue; } var mature = data.myMatureCount || 0, idle = data.myIdleCount || 0, total = data.myPlotTotal || 0; farmLog("成熟"+mature+" 空闲"+idle+" 总计"+total); if (mature > 0 && state.farmAutoHarvest) { farmLog('收获成熟 ×' + mature); await farmHarvest(); await sleep(500); } if (idle > 0 && state.farmAutoPlant && state.farmSeedId) { farmLog('种植 ' + state.farmSeedName + ' ×' + idle); await farmPlant(state.farmSeedId); await sleep(500); } if (data.farmInvasion && state.farmAutoInvasion) { farmLog('迎击灵田入侵...'); await farmInvasionAttack(); await sleep(500); } if (state.farmExpandEnabled && idle <= 0 && Date.now() - _lastFarmExpandTime > 3600000) { _lastFarmExpandTime = Date.now(); farmLog('开垦...'); await farmExpand(999); } updateFarmExpandTimer(); } catch (e) { farmLog('异常: ' + (e.message || '')); } await sleep(state.farmInterval * 1000); } updateMeter(); autoFarmRunning = false; try { localStorage.setItem('lvSpiritCleaner.farmRunning', '0'); } catch(_) {} }
+    async function autoFarmLoop() { if (autoFarmRunning) return; autoFarmRunning = true; try { localStorage.setItem('lvSpiritCleaner.farmRunning', '1'); } catch(_) {} updateMeter(); farmLog('灵田监控启动'); var firstCycle = true; while (autoFarmRunning) { if (firstCycle) { firstCycle = false; farmLog('── 首次启动，等待 ' + state.farmInterval + ' 秒后开始检测 ──'); var waited = 0; while (autoFarmRunning && waited < state.farmInterval * 1000) { await sleep(1000); waited += 1000; } if (!autoFarmRunning) break; } try { var data = await farmOverview(); if (!data) { farmLog('获取灵田数据失败'); await sleep(10000); continue; } var mature = data.myMatureCount || 0, idle = data.myIdleCount || 0, total = data.myPlotTotal || 0; farmLog("成熟"+mature+" 空闲"+idle+" 总计"+total); if (mature > 0 && state.farmAutoHarvest) { farmLog('收获成熟 ×' + mature); await farmHarvest(); await sleep(500); } if (idle > 0 && state.farmAutoPlant && state.farmSeedId) { farmLog('种植 ' + state.farmSeedName + ' ×' + idle); await farmPlant(state.farmSeedId); await sleep(500); } if (data.farmInvasion && state.farmAutoInvasion) { farmLog('迎击灵田入侵...'); await farmInvasionAttack(); await sleep(500); } if (state.farmExpandEnabled && idle <= 0 && Date.now() - _lastFarmExpandTime > 3600000) { _lastFarmExpandTime = Date.now(); farmLog('开垦...'); await farmExpand(999); } updateFarmExpandTimer(); } catch (e) { farmLog('异常: ' + (e.message || '')); } await sleep(state.farmInterval * 1000); } updateMeter(); autoFarmRunning = false; try { localStorage.setItem('lvSpiritCleaner.farmRunning', '0'); } catch(_) {} }
     function stopFarm() { autoFarmRunning = false; try { localStorage.setItem('lvSpiritCleaner.farmRunning', '0'); } catch(_) {} updateMeter(); }
     function farmLog(msg) { var log = document.getElementById('lvscFarmLog'); if (!log) return; var t = new Date().toLocaleTimeString(); log.textContent = '[' + t + '] ' + msg + '\n' + (log.textContent || ''); if (log.textContent.length > 4000) log.textContent = log.textContent.substring(0, 4000); }
     function updateFarmExpandTimer() {
@@ -1409,10 +1477,10 @@ async function ensureNirvanaPill() {
                 var tmp = document.createElement('div');
                 tmp.innerHTML = message;
                 var text = (tmp.textContent || '').replace(/\s+/g, ' ');
-                var numRe = '([\\d.]+|[一二三四五六七八九十百千万零〇壹贰叁肆伍陆柒捌玖拾]+)';
-                var opRe = '([+\\-×÷*\\/xX＋－−])';
-                var exprMatch = text.match(new RegExp(numRe + '\\s*' + opRe + '\\s*' + numRe));
-                if (!exprMatch) { exprMatch = message.replace(/<[^>]+>/g, ' ').match(new RegExp(numRe + '\\s*' + opRe + '\\s*' + numRe)); }
+                var numRe = '([\d.]+|[一二三四五六七八九十百千万零〇壹贰叁肆伍陆柒捌玖拾]+)';
+                var opRe = '([+\-×÷*\/xX＋－−])';
+                var exprMatch = text.match(new RegExp(numRe + '\s*' + opRe + '\s*' + numRe));
+                if (!exprMatch) { exprMatch = message.replace(/<[^>]+>/g, ' ').match(new RegExp(numRe + '\s*' + opRe + '\s*' + numRe)); }
                 if (exprMatch) {
                     var a = parseChineseNum(exprMatch[1]);
                     var op = exprMatch[2];
@@ -1462,8 +1530,13 @@ async function ensureNirvanaPill() {
     var wecomQueue = [];
     var BUILTIN_CHANGELOG = [
          {
+            version: '1.6.6',
+            title: 'QQ交流群901064639 快速清理+内嵌主题+抢红包',
+            notes: ['快速清理模式(神识耗尽冥想+夜晚智能打怪)', '自动抢红包监控(MutationObserver实时检测)', '竞技场模拟器(支持对手选择与胜率统计)', '省电模式(全黑覆盖层减少渲染负担)', '画中画模式(独立悬浮窗显示运行状态)', '通知推送(系统通知栏+App Badge)', '内嵌主题模式(适配游戏侧边栏主题)', '配置槽位(A/B槽快速切换配置方案)', '默认配置自动加载(新用户一键初始化)', '安全模式增强(配置备份与恢复机制)', '刷新后自启(多项监控支持自动恢复)', '炼制延迟可配置(防检测随机间隔)', '涅槃延迟可配置(独立设置每批间隔)', '首次启动等待(避免刚启动误判)', '运行日志弹窗(点击状态栏查看历史)', '主日志重构(日期分隔+刷新保留)', '面板动画优化(显示/折叠过渡效果)', '折叠状态持久化(记忆展开/收起)', '游戏菜单注入(更多菜单+灵界入口)', '自动登录实时保存(oninput即时存储)', '保释方式新增材料选项', '战力倍率范围扩展(0.05~10)', '品质炼制购买延迟降低(1500ms→300ms)', '修复空白卷轴误判问题', '修复折叠状态同步异常']
+         },
+         {
             version: '1.6.5',
-            title: '丹药自动升阶+全局安全模式+多项优化',
+            title: 'QQ交流群901064639 丹药自动升阶+全局安全模式+多项优化',
             notes: ['丹药自动升阶监控(定时批量操作)', '全局安全模式一键开关', '自动解答反脚本算术题验证', '自动点击解除天道禁闭', '涅槃丹单次使用数量自定义', '月卡仙缘领取状态实时显示', '面板新增全局搜索与折叠', '背包API升级至全新分页接口', '物品品质识别与配方匹配优化', '网络请求增加十秒超时保护', '自动操作增加随机延迟防检测', '冥想改为直接调用API启动', '神识消耗支持动态读取与倍率', '面板Tab精简合并至三个核心', '功能模块卡片式分类重组', 'UI动态注入与兜底恢复机制', '自动登录剥离至后台独立运行', '修复DOM元素空指针异常', '配置导出自动过滤敏感信息', '优化面板视觉层级与折叠动画', '通知推送支持分类独立开关']
          },
          {
@@ -1579,6 +1652,334 @@ async function ensureNirvanaPill() {
             '修复本命吞噬：改查背包(/api/game/inventory)，兼容type/slot/attackBonus等多种字段名。'
         ]
     };
+    var BUILTIN_DEFAULTS = {
+        autoMeditate:'1',autoMerchantLegend:'0',merchantMode:'leave',merchantKeyword:'0',merchantMaxPrice:'0',
+        autoHireCheapest:'1',hireRetryLimit:'1',hireMaxFee:'0',noMasterProtector:'0',autoMysteryBox:'0',
+        autoSelfFightWeak:'1',selfFightMargin:'1',noCrossRealmFight:'1',noCrossRealmGap:'1',
+        autoRecoveryMode:'both',autoRecoveryThreshold:'50',autoRecoveryTarget:'100',sectQuickRecovery:'1',
+        autoHpPriority:'宗门,灵力,丹药',autoMpPriority:'宗门,丹药,灵石',autoRepair:'0',autoOriginRepair:'1',repairThreshold:'100',
+        autoVoidBody:'0',voidBodyRarity:'5',voidBodyBuyQty:'1',autoHiddenCharm:'0',hiddenCharmRarity:'5',hiddenCharmBuyQty:'1',hiddenCharmRetryMs:'60000',
+        autoNirvanaPill:'1',autoReviveDeath:'1',nirvanaRarity:'5',nirvanaRecipeId:'',nirvanaCraftQty:'1',nirvanaBatchSize:'10',nirvanaQualityCount:'10',nirvanaQualityTarget:'5',nirvanaUseQty:'1',nirvanaAutoTimer:'0',nirvanaTimerMin:'45',
+        autoDisposeEnabled:'0',autoDisposeInterval:'300',autoDisposeRules:'[]',autoDisposeProtectedIds:'["skill_sect_sword"]',autoDisposeProtected:'[]',autoSynthesize:'0',
+        farmAutoHarvest:'0',farmAutoPlant:'0',farmSeedId:'',farmSeedName:'选择种子',farmInterval:'1000',farmExpandEnabled:'1',farmExpandCount:'50',farmExpandHours:'1',farmAutoInvasion:'0',
+        autoBreakthrough:'1',safeMode:'0',autoMonthlyCard:'1',bailMethod:'stone',autoBail:'0',autoBailClick:'0',autoVerify:'0',
+        minLuck:'10',luckRefreshMethod:'stone',autoMaintainLuck:'0',monitorStartSpirit:'95',meditateStopSpirit:'95',
+        autoGiftItemsDaily:'0',autoGiftStonesDaily:'0',autoTeachDaily:'0',autoMasterRequests:'0',
+        washStoneMonitorInterval:'900',washStoneUpgrade:'1',washUpgradeAfterRefresh:'1',craftQualityTarget:'0',craftTimerMode:'quality',craftType:'alchemy',craftRecipeId:'',craftBatchSize:'0',craftQualityCount:'0',craftTargetCount:'10',craftAutoTimer:'0',craftTimerMin:'60',craftAutoBuyMats:'0',craftAfterRefresh:'0',
+        inscriptionStat:'攻击',inscriptionQuality:'any',inscriptionMinValue:'0',inscriptionEquipmentId:'',inscriptionAutoEquip:'0',inscriptionTargets:'神识:195',inscriptionPullMode:'10',inscriptionResultDelay:'2000',inscriptionDiscardDelay:'2000',inscriptionEquipCrossStat:'0',inscriptionEquipSkipSpirit:'0',inscriptionStopMode:'any',inscriptionMaxAttempts:'0',
+        pavilionItemName:'宗门破境丹',pavilionItemId:'psect_breakthrough',pavilionQty:'99',pavilionLoop:'10',pavilionDelay:'5000',
+        autoReloadMin:'0',useAdvancedMeditate:'1',summerOnlyAdvMeditate:'1',summerOnlyAdvancedMeditate:'1',nightOnlyExplore:'1',advMedCooldownMin:'0',autoRefreshLuck:'1',autoExploreAfterMeditate:'1',
+        themeMode:'float',equipSwapEnabled:'0',exploreMode:'api',preferMultiplier:'1',keepMultiplier:'0',quickClearTargetPct:'95',
+        pillUpgradeMonitorInterval:'500',
+        wecomNotify:'0',wecomNotifyWebhook:'',wecomWorldWebhook:'',wecomPrivateWebhook:'',wecomShowStatus:'1',
+        autoRestart:'1',autoPetHeal:'1',autoPetHealInterval:'6666',autoFullHeal:'1',autoFullHealInterval:'1500',
+        delayMs:'2000',autoRecruit:'0',recruitIntervalMs:'1000',autoHudaoBreakMeditate:'0',
+        autoSellEnabled:'0',autoSellInterval:'60',autoSellScope:'pill',
+        giftItemsMode:'all',giftStonesMode:'all',giftItemName:'灵草',giftItemQty:'1',giftStonesQty:'1',giftItemTemplateId:'beast_core_high_1',giftPlayerItemId:'477417',
+        skillWashScope:'body',skillWashCategory:'ATTACK',skillWashSkillId:'4590',skillWashSlot:'1',skillWashStoneQuality:'5',skillWashTargetMin:'',skillWashTargetType:'',skillWashUpgradeTarget:'5',
+        spiritEquipIds:'["1395435","1250688","639818","1287451","-9000001"]',combatEquipIds:'["1395435","1250688","639818","1395419","-9000001"]',equipSpiritSlot:'1',equipCombatSlot:'2',
+        giftItemsSelected:'[]',giftStonesSelected:'[]',
+        giftItemsSelectedDiscipleNames:'["南风知我意","喵喵喵","改变","零四"]',giftSelectedDiscipleNames:'["南风知我意","喵喵喵","改变","零四"]',
+        giftItemsDiscipleQtys:'{}',giftStonesDiscipleQtys:'{}',
+        aggressiveMode:'0',giftItemsDiscipleItems:'{"id_3873":{"itemId":477417,"itemName":"灵草"},"id_3223":{"itemId":477417,"itemName":"灵草"},"id_3272":{"itemId":477417,"itemName":"灵草"},"id_3616":{"itemId":477417,"itemName":"灵草"},"id_933":{"itemId":477417,"itemName":"灵草"}}',
+        areaNameToId:'{"仙君诏庭天仙":"immortal_lord_edict_court","万法朝阙仙君":"immortal_lord_wanfa_court","玄黄荒阙仙王":"immortal_king_xuanhuang_waste","太荒王域仙王":"immortal_king_taihuang_realm"}',
+        autoNatalDevour:'0',checkDaoyunBoost:'0',
+        qualityCraftAfterRefresh:'1',luckAfterRefresh:'1',farmAfterRefresh:'1',disposeAfterRefresh:'1',
+        reviveExploreArea:'',merchantQualityFirst:'0',merchantStrictMatch:'0',
+        treasureBatchSize:'0',treasureUseQuantity:'1',treasureIntervalMs:'0',
+        powerSave:'0',pipMode:'0',notifyMode:'0',desktopNotify:'0',
+        statusMutedBreak:'0',statusMutedFarm:'0',statusMutedDispose:'0',statusMutedCraft:'0',statusMutedOrigin:'0',statusMutedLuck:'0',statusMutedInsc:'0',statusMutedFight:'0',statusMutedMerchant:'0',statusMutedEquip:'0',statusMutedWecom:'1'
+    };
+    function loadDefaultConfig() {
+        var cnt = 0;
+        for (var k in BUILTIN_DEFAULTS) {
+            try { localStorage.setItem('lvSpiritCleaner.' + k, BUILTIN_DEFAULTS[k]); cnt++; } catch(_) {}
+        }
+        alert('已加载默认配置 ' + cnt + ' 项，页面将刷新');
+        setTimeout(function(){ location.reload(); }, 500);
+    }
+    // 新用户首次使用自动加载默认配置
+    (function() {
+        try {
+            if (!localStorage.getItem('lvSpiritCleaner.seenBuiltinVersion')) {
+                for (var k in BUILTIN_DEFAULTS) {
+                    if (localStorage.getItem('lvSpiritCleaner.' + k) === null) {
+                        try { localStorage.setItem('lvSpiritCleaner.' + k, BUILTIN_DEFAULTS[k]); } catch(_) {}
+                    }
+                }
+                localStorage.setItem('lvSpiritCleaner.seenBuiltinVersion', SCRIPT_VERSION);
+            }
+        } catch(_) {}
+    })();
+
+    // ===== 安全模式预设配置（用户提供的配置）=====
+    var SAFE_MODE_CONFIG = {
+        "lvSpiritCleaner.nirvanaAutoTimer": "0",
+        "lvSpiritCleaner.pavilionItemName": "宗门破境丹",
+        "lvSpiritCleaner.redPacketTotalAmount": "97706247",
+        "lvSpiritCleaner.redPacketClaimed": "[\"134\",\"135\",\"136\",\"137\",\"138\",\"139\",\"140\",\"141\",\"142\",\"143\",\"144\",\"145\",\"146\",\"147\",\"148\",\"149\",\"150\",\"151\",\"152\",\"153\",\"154\",\"157\",\"158\",\"159\",\"160\",\"161\",\"162\",\"163\",\"164\",\"165\",\"166\",\"167\",\"168\",\"169\",\"170\",\"171\",\"172\",\"173\",\"174\",\"175\",\"176\"]",
+        "lvSpiritCleaner.skillWashScope": "body",
+        "lvSpiritCleaner.autoWashStoneUpgrade": "1",
+        "lvSpiritCleaner.autoMerchantLegend": "0",
+        "lvSpiritCleaner.giftStonesSelected": "[3223,3873,933,1551,3616,3272,2363,2254]",
+        "lvSpiritCleaner.statusMutedBreak": "0",
+        "lvSpiritCleaner.minLuck": "10",
+        "lvSpiritCleaner.inscriptionMinValue": "0",
+        "lvSpiritCleaner.qualityCraftAfterRefresh": "1",
+        "lvSpiritCleaner.statusMutedFarm": "0",
+        "lvSpiritCleaner.luckAfterRefresh": "1",
+        "lvSpiritCleaner.skillWashCategory": "ATTACK",
+        "lvSpiritCleaner.inscriptionPullMode": "10",
+        "lvSpiritCleaner.autoGiftStonesDaily": "0",
+        "lvSpiritCleaner.craftQualityTarget": "0",
+        "lvSpiritCleaner.autoReloadMin": "0",
+        "lvSpiritCleaner.redPacketYesterdayAmount": "0",
+        "lvSpiritCleaner.giftItemsSelectedDiscipleNames": "[\"南风知我意\",\"喵喵喵\",\"改变\",\"零四\"]",
+        "lvSpiritCleaner.farmExpandHours": "1",
+        "lvSpiritCleaner.safeMode": "0",
+        "lvSpiritCleaner.autoHireCheapest": "0",
+        "lvSpiritCleaner.giftPlayerItemId": "477417",
+        "lvSpiritCleaner.skillWashSlot": "1",
+        "lvSpiritCleaner.inscriptionStopMode": "any",
+        "lvSpiritCleaner.skillWashTargetMin": "",
+        "lvSpiritCleaner.inscriptionMaxAttempts": "0",
+        "lvSpiritCleaner.farmAutoPlant": "0",
+        "lvSpiritCleaner.autoStartFarm": "0",
+        "lvSpiritCleaner.giftItemsSelected": "[3223,3873,933,1551,3616,3272,2363,2254]",
+        "lvSpiritCleaner.spiritEquipIds": "[\"1395435\",\"1250688\",\"639818\",\"1287451\",\"-9000001\"]",
+        "lvSpiritCleaner.autoDisposeEnabled": "0",
+        "lvSpiritCleaner.redPacketTotal": "40",
+        "lvSpiritCleaner.statusMutedDispose": "0",
+        "lvSpiritCleaner.redPacketEnabled": "0",
+        "lvSpiritCleaner.merchantQualityFirst": "0",
+        "lvSpiritCleaner.autoMpPriority": "",
+        "lvSpiritCleaner.farmAfterRefresh": "1",
+        "lvSpiritCleaner.skillWashTargetType": "",
+        "lvSpiritCleaner.keepMultiplier": "0",
+        "lvSpiritCleaner.advMedCooldownMin": "0",
+        "lvSpiritCleaner.summerOnlyAdvMeditate": "1",
+        "lvSpiritCleaner.autoBail": "0",
+        "lvSpiritCleaner.autoDisposeProtectedIds": "[\"skill_sect_sword\"]",
+        "lvSpiritCleaner.autoFullHeal": "1",
+        "lvSpiritCleaner.treasureIntervalMs": "0",
+        "lvSpiritCleaner.giftItemsMode": "all",
+        "lvSpiritCleaner.farmAutoHarvest": "0",
+        "lvSpiritCleaner.autoHudaoBreakMeditate": "0",
+        "lvSpiritCleaner.powerSave": "1",
+        "lvSpiritCleaner.bailMethod": "stone",
+        "lvSpiritCleaner.statusMutedCraft": "0",
+        "lvSpiritCleaner.hiddenCharmRetryMs": "60000",
+        "lvSpiritCleaner.craftAfterRefresh": "0",
+        "lvSpiritCleaner.pavilionQty": "99",
+        "lvSpiritCleaner.notifyMode": "0",
+        "lvSpiritCleaner.giftItemQty": "1",
+        "lvSpiritCleaner.autoStartDispose": "0",
+        "lvSpiritCleaner.inscriptionEquipmentId": "",
+        "lvSpiritCleaner.selfFightMargin": "1",
+        "lvSpiritCleaner.nirvanaRarity": "5",
+        "lvSpiritCleaner.treasureUseQuantity": "1",
+        "lvSpiritCleaner.hiddenCharmBuyQty": "1",
+        "lvSpiritCleaner.wecomWorldWebhook": "",
+        "lvSpiritCleaner.autoSellInterval": "60",
+        "lvSpiritCleaner.statusMutedOrigin": "0",
+        "lvSpiritCleaner.autoMonthlyCard": "0",
+        "lvSpiritCleaner.autoReviveDeath": "0",
+        "lvSpiritCleaner.autoStartPillUpgrade": "0",
+        "lvSpiritCleaner.autoDisposeRules": "[]",
+        "lvSpiritCleaner.inscriptionResultDelay": "2000",
+        "lvSpiritCleaner.merchantMode": "leave",
+        "lvSpiritCleaner.statusMutedLuck": "0",
+        "lvSpiritCleaner.autoDisposeProtected": "[]",
+        "lvSpiritCleaner.autoRepair": "0",
+        "lvSpiritCleaner.giftItemsDiscipleQtys": "{\"id_3223\":1,\"id_3873\":1,\"id_933\":1,\"id_1551\":1,\"id_3616\":1,\"id_3272\":1,\"id_2363\":1,\"id_2254\":1}",
+        "lvSpiritCleaner.pavilionDelay": "5000",
+        "lvSpiritCleaner.aggressiveMode": "0",
+        "lvSpiritCleaner.nirvanaRecipeId": "",
+        "lvSpiritCleaner.autoSellScope": "pill",
+        "lvSpiritCleaner.farmAutoInvasion": "0",
+        "lvSpiritCleaner.nirvanaCraftQty": "1",
+        "lvSpiritCleaner.merchantMaxPrice": "0",
+        "lvSpiritCleaner.quickClearTargetPct": "95",
+        "lvSpiritCleaner.useAdvancedMeditate": "0",
+        "lvSpiritCleaner.nightOnlyExplore": "0",
+        "lvSpiritCleaner.autoSellEnabled": "0",
+        "lvSpiritCleaner.statusMutedInsc": "0",
+        "lvSpiritCleaner.giftItemsDiscipleItems": "{\"id_3873\":{\"itemId\":1741567,\"itemName\":\"传说洗炼石\"},\"id_3223\":{\"itemId\":1741567,\"itemName\":\"传说洗炼石\"},\"id_3272\":{\"itemId\":1741567,\"itemName\":\"传说洗炼石\"},\"id_3616\":{\"itemId\":1882171,\"itemName\":\"传说洗炼石\"},\"id_933\":{\"itemId\":1882171,\"itemName\":\"传说洗炼石\"}}",
+        "lvSpiritCleaner.giftItemName": "灵草",
+        "lvSpiritCleaner.pipMode": "1",
+        "lvSpiritCleaner.washStoneMonitorInterval": "900",
+        "lvSpiritCleaner.craftTimerMode": "quality",
+        "lvSpiritCleaner.inscriptionQuality": "any",
+        "lvSpiritCleaner.reviveExploreArea": "",
+        "lvSpiritCleaner.equipSpiritSlot": "1",
+        "lvSpiritCleaner.wecomShowStatus": "1",
+        "lvSpiritCleaner.autoMysteryBox": "0",
+        "lvSpiritCleaner.autoHiddenCharm": "0",
+        "lvSpiritCleaner.autoHpPriority": "",
+        "lvSpiritCleaner.craftType": "alchemy",
+        "lvSpiritCleaner.nirvanaBatchSize": "10",
+        "lvSpiritCleaner.repairThreshold": "100",
+        "lvSpiritCleaner.noMasterProtector": "0",
+        "lvSpiritCleaner.merchantKeyword": "0",
+        "lvSpiritCleaner.craftDelayMax": "10",
+        "lvSpiritCleaner.autoSynthesize": "0",
+        "lvSpiritCleaner.craftQualityCount": "0",
+        "lvSpiritCleaner.autoVoidBody": "0",
+        "lvSpiritCleaner.wecomNotify": "0",
+        "lvSpiritCleaner.inscriptionStat": "攻击",
+        "lvSpiritCleaner.skillWashStoneQuality": "5",
+        "lvSpiritCleaner.skillWashUpgradeTarget": "5",
+        "lvSpiritCleaner.areaNameToId": "{\"仙君诏庭天仙\":\"immortal_lord_edict_court\",\"万法朝阙仙君\":\"immortal_lord_wanfa_court\",\"玄黄荒阙仙王\":\"immortal_king_xuanhuang_waste\",\"太荒王域仙王\":\"immortal_king_taihuang_realm\"}",
+        "lvSpiritCleaner.hiddenCharmRarity": "5",
+        "lvSpiritCleaner.pavilionItemId": "psect_breakthrough",
+        "lvSpiritCleaner.craftRecipeId": "",
+        "lvSpiritCleaner.autoStartWashStone": "0",
+        "lvSpiritCleaner.quickClearShowCompact": "0",
+        "lvSpiritCleaner.autoDisposeInterval": "300",
+        "lvSpiritCleaner.nirvanaQualityCount": "10",
+        "lvSpiritCleaner.craftAutoTimer": "0",
+        "lvSpiritCleaner.voidBodyRarity": "5",
+        "lvSpiritCleaner.autoVerify": "0",
+        "lvSpiritCleaner.autoTeachDaily": "0",
+        "lvSpiritCleaner.autoRecoveryTarget": "0",
+        "lvSpiritCleaner.giftStonesMode": "all",
+        "lvSpiritCleaner.autoPetHeal": "0",
+        "lvSpiritCleaner.autoNirvanaPill": "1",
+        "lvSpiritCleaner.wecomNotifyWebhook": "",
+        "lvSpiritCleaner.autoMeditate": "0",
+        "lvSpiritCleaner.voidBodyBuyQty": "1",
+        "lvSpiritCleaner.statusMutedFight": "0",
+        "lvSpiritCleaner.autoMaintainLuck": "0",
+        "lvSpiritCleaner.autoGiftItemsDaily": "0",
+        "lvSpiritCleaner.autoRecruit": "0",
+        "lvSpiritCleaner.checkDaoyunBoost": "0",
+        "lvSpiritCleaner.craftTimerMin": "60",
+        "lvSpiritCleaner.inscriptionAutoEquip": "0",
+        "lvSpiritCleaner.craftDelayMin": "6",
+        "lvSpiritCleaner.redPacketTodayAmount": "97706247",
+        "lvSpiritCleaner.autoLoginEnabled": "0",
+        "lvSpiritCleaner.farmSeedName": "选择种子",
+        "lvSpiritCleaner.treasureBatchSize": "0",
+        "lvSpiritCleaner.equipSwapEnabled": "0",
+        "lvSpiritCleaner.inscriptionEquipSkipSpirit": "0",
+        "lvSpiritCleaner.autoPetHealInterval": "6666",
+        "lvSpiritCleaner.disposeAfterRefresh": "1",
+        "lvSpiritCleaner.exploreMode": "api",
+        "lvSpiritCleaner.recruitIntervalMs": "1000",
+        "lvSpiritCleaner.combatEquipIds": "[\"1395435\",\"1250688\",\"639818\",\"1395419\",\"-9000001\"]",
+        "lvSpiritCleaner.craftTargetCount": "10",
+        "lvSpiritCleaner.equipCombatSlot": "2",
+        "lvSpiritCleaner.autoBailClick": "0",
+        "lvSpiritCleaner.autoFullHealInterval": "1500",
+        "lvSpiritCleaner.redPacketLastDate": "2026-07-14",
+        "lvSpiritCleaner.giftStonesQty": "1",
+        "lvSpiritCleaner.summerOnlyAdvancedMeditate": "0",
+        "lvSpiritCleaner.luckRefreshMethod": "stone",
+        "lvSpiritCleaner.craftBatchSize": "0",
+        "lvSpiritCleaner.autoRestart": "1",
+        "lvSpiritCleaner.noCrossRealmGap": "1",
+        "lvSpiritCleaner.sectQuickRecovery": "0",
+        "lvSpiritCleaner.autoRecoveryMode": "none",
+        "lvSpiritCleaner.inscriptionDiscardDelay": "2000",
+        "lvSpiritCleaner.autoBreakthrough": "0",
+        "lvSpiritCleaner.desktopNotify": "0",
+        "lvSpiritCleaner.hireMaxFee": "0",
+        "lvSpiritCleaner.themeMode": "float",
+        "lvSpiritCleaner.statusMutedMerchant": "0",
+        "lvSpiritCleaner.preferMultiplier": "1",
+        "lvSpiritCleaner.farmExpandCount": "50",
+        "lvSpiritCleaner.pillUpgradeMonitorInterval": "500",
+        "lvSpiritCleaner.autoNatalDevour": "0",
+        "lvSpiritCleaner.farmExpandEnabled": "1",
+        "lvSpiritCleaner.nirvanaQualityTarget": "5",
+        "lvSpiritCleaner.giftSelectedDiscipleNames": "[\"南风知我意\",\"喵喵喵\",\"改变\",\"零四\"]",
+        "lvSpiritCleaner.autoOriginRepair": "0",
+        "lvSpiritCleaner.autoRecoveryThreshold": "0",
+        "lvSpiritCleaner.giftItemTemplateId": "beast_core_high_1",
+        "lvSpiritCleaner.redPacketWeek": "40",
+        "lvSpiritCleaner.redPacketWeekAmount": "97706247",
+        "lvSpiritCleaner.delayMs": "2000",
+        "lvSpiritCleaner.pavilionLoop": "10",
+        "lvSpiritCleaner.autoSelfFightWeak": "0",
+        "lvSpiritCleaner.redPacketYesterday": "0",
+        "lvSpiritCleaner.monitorStartSpirit": "0",
+        "lvSpiritCleaner.giftStonesDiscipleQtys": "{\"id_3223\":60000000,\"id_3873\":60000000,\"id_933\":60000000,\"id_1551\":1,\"id_3616\":60000000,\"id_3272\":60000000,\"id_2363\":10000000,\"id_2254\":1}",
+        "lvSpiritCleaner.skillWashSkillId": "4590",
+        "lvSpiritCleaner.nirvanaUseQty": "1",
+        "lvSpiritCleaner.autoMasterRequests": "0",
+        "lvSpiritCleaner.autoExploreAfterMeditate": "0",
+        "lvSpiritCleaner.nirvanaTimerMin": "45",
+        "lvSpiritCleaner.statusMutedEquip": "0",
+        "lvSpiritCleaner.hireRetryLimit": "1",
+        "lvSpiritCleaner.washStoneUpgrade": "1",
+        "lvSpiritCleaner.merchantStrictMatch": "0",
+        "lvSpiritCleaner.wecomPrivateWebhook": "",
+        "lvSpiritCleaner.inscriptionEquipCrossStat": "0",
+        "lvSpiritCleaner.farmInterval": "1000",
+        "lvSpiritCleaner.farmSeedId": "",
+        "lvSpiritCleaner.autoRefreshLuck": "1",
+        "lvSpiritCleaner.craftAutoBuyMats": "0",
+        "lvSpiritCleaner.washUpgradeAfterRefresh": "1",
+        "lvSpiritCleaner.redPacketToday": "40",
+        "lvSpiritCleaner.statusMutedWecom": "1",
+        "lvSpiritCleaner.inscriptionTargets": "神识:195",
+        "lvSpiritCleaner.meditateStopSpirit": "0",
+        "lvSpiritCleaner.noCrossRealmFight": "0"
+    };
+
+    // 安全模式：备份当前所有设置到 localStorage
+    function backupOriginalSettings() {
+        var backup = {};
+        for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            if (key.indexOf('lvSpiritCleaner.') === 0) {
+                backup[key] = localStorage.getItem(key);
+            }
+        }
+        localStorage.setItem('lvSpiritCleaner.safeModeBackup', JSON.stringify(backup));
+    }
+
+    // 安全模式：应用预设配置到 localStorage
+    function applySafeModeConfig() {
+        for (var key in SAFE_MODE_CONFIG) {
+            if (SAFE_MODE_CONFIG.hasOwnProperty(key)) {
+                localStorage.setItem(key, SAFE_MODE_CONFIG[key]);
+            }
+        }
+        // 确保安全模式本身保持开启，不被配置覆盖
+        localStorage.setItem('lvSpiritCleaner.safeMode', '1');
+    }
+
+    // 安全模式：从备份恢复原配置（保护自启设置不被覆盖）
+    function restoreOriginalSettings() {
+        // 先保存当前的自启设置
+        var autoStartSettings = {};
+        var autoStartKeys = ['lvSpiritCleaner.autoStartDispose','lvSpiritCleaner.autoStartWashStone','lvSpiritCleaner.autoStartPillUpgrade','lvSpiritCleaner.autoStartFarm'];
+        for (var asi = 0; asi < autoStartKeys.length; asi++) {
+            autoStartSettings[autoStartKeys[asi]] = localStorage.getItem(autoStartKeys[asi]);
+        }
+        var backupJson = localStorage.getItem('lvSpiritCleaner.safeModeBackup');
+        if (backupJson) {
+            try {
+                var backup = JSON.parse(backupJson);
+                for (var key in backup) {
+                    if (backup.hasOwnProperty(key)) {
+                        localStorage.setItem(key, backup[key]);
+                    }
+                }
+            } catch (_) {}
+        }
+        // 确保安全模式标记不会从备份中恢复
+        localStorage.setItem('lvSpiritCleaner.safeMode', '0');
+        // 恢复后再把自启设置写回去（用户手动勾选的优先级更高）
+        for (var asi2 = 0; asi2 < autoStartKeys.length; asi2++) {
+            var k = autoStartKeys[asi2];
+            if (autoStartSettings[k] !== null) {
+                localStorage.setItem(k, autoStartSettings[k]);
+            }
+        }
+        localStorage.removeItem('lvSpiritCleaner.safeModeBackup');
+    }
 
     var state = {
         // === 基础探索 ===
@@ -1639,6 +2040,8 @@ async function ensureNirvanaPill() {
         // === 自动流程 ===
         autoMeditate: localStorage.getItem('lvSpiritCleaner.autoMeditate') !== '0',
         exploreMode: localStorage.getItem('lvSpiritCleaner.exploreMode') || 'api',
+        quickClearRunning: false,
+        quickClearTargetPct: readNumber('lvSpiritCleaner.quickClearTargetPct', 95),
         autoExploreAfterMeditate: localStorage.getItem('lvSpiritCleaner.autoExploreAfterMeditate') !== '0',
         checkDaoyunBoost: localStorage.getItem('lvSpiritCleaner.checkDaoyunBoost') !== '0',
         useAdvancedMeditate: localStorage.getItem('lvSpiritCleaner.useAdvancedMeditate') === '1',
@@ -1686,6 +2089,8 @@ nirvanaCraftQty: readNumber('lvSpiritCleaner.nirvanaCraftQty', 1),
         nirvanaUseQty: readNumber('lvSpiritCleaner.nirvanaUseQty', 1),
         nirvanaAutoTimer: localStorage.getItem('lvSpiritCleaner.nirvanaAutoTimer') === '1',
         nirvanaTimerMin: readNumber('lvSpiritCleaner.nirvanaTimerMin', 10),
+        nirvanaDelayMin: readNumber('lvSpiritCleaner.nirvanaDelayMin', 5),
+        nirvanaDelayMax: readNumber('lvSpiritCleaner.nirvanaDelayMax', 10),
         nirvanaNextTimerTime: readNumber('lvSpiritCleaner.nirvanaNextTimerTime', 0),
         autoDisposeEnabled: localStorage.getItem('lvSpiritCleaner.autoDisposeEnabled') === '1',
         autoDisposeRules: (function() { try { return JSON.parse(localStorage.getItem('lvSpiritCleaner.autoDisposeRules') || '[]'); } catch(_) { return []; } })(),
@@ -1699,6 +2104,25 @@ nirvanaCraftQty: readNumber('lvSpiritCleaner.nirvanaCraftQty', 1),
         farmInterval: readNumber('lvSpiritCleaner.farmInterval', 30),
         autoRestart: localStorage.getItem('lvSpiritCleaner.autoRestart') === '1',
         farmExpandEnabled: localStorage.getItem('lvSpiritCleaner.farmExpandEnabled') === '1',
+        redPacketEnabled: localStorage.getItem('lvSpiritCleaner.redPacketEnabled') === '1',
+        redPacketRunning: false,
+        redPacketTotal: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketTotal')) || 0,
+        redPacketTotalAmount: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketTotalAmount')) || 0,
+        redPacketToday: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketToday')) || 0,
+        redPacketTodayAmount: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketTodayAmount')) || 0,
+        redPacketYesterday: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketYesterday')) || 0,
+        redPacketYesterdayAmount: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketYesterdayAmount')) || 0,
+        redPacketWeek: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketWeek')) || 0,
+        redPacketWeekAmount: parseInt(localStorage.getItem('lvSpiritCleaner.redPacketWeekAmount')) || 0,
+        redPacketLastDate: localStorage.getItem('lvSpiritCleaner.redPacketLastDate') || '',
+        redPacketClaimed: JSON.parse(localStorage.getItem('lvSpiritCleaner.redPacketClaimed') || '[]'),
+        redPacketObserver: null,
+        arenaSimCount: readNumber('lvSpiritCleaner.arenaSimCount', 100),
+        arenaSimRunning: false,
+        arenaSimWin: 0,
+        arenaSimLose: 0,
+        arenaSimTotal: 0,
+        arenaSimCurrentOpponent: null,
         farmAutoInvasion: localStorage.getItem('lvSpiritCleaner.farmAutoInvasion') !== '0',
         pavilionItemName: localStorage.getItem('lvSpiritCleaner.pavilionItemName') || '',
         pavilionQty: readNumber('lvSpiritCleaner.pavilionQty', 99),
@@ -1722,9 +2146,15 @@ nirvanaCraftQty: readNumber('lvSpiritCleaner.nirvanaCraftQty', 1),
         skillWashTargetMin: localStorage.getItem('lvSpiritCleaner.skillWashTargetMin') || '',
         washStoneMonitorInterval: readNumber('lvSpiritCleaner.washStoneMonitorInterval', 30),
         pillUpgradeMonitorInterval: readNumber('lvSpiritCleaner.pillUpgradeMonitorInterval', 30),
+        autoStartDispose: localStorage.getItem('lvSpiritCleaner.autoStartDispose') === '1',
+        autoStartWashStone: localStorage.getItem('lvSpiritCleaner.autoStartWashStone') === '1',
+        autoStartPillUpgrade: localStorage.getItem('lvSpiritCleaner.autoStartPillUpgrade') === '1',
+        autoStartFarm: localStorage.getItem('lvSpiritCleaner.autoStartFarm') === '1',
         craftAutoBuyMats: localStorage.getItem('lvSpiritCleaner.craftAutoBuyMats') === '1',
         craftAutoTimer: localStorage.getItem('lvSpiritCleaner.craftAutoTimer') === '1',
         craftTimerMin: readNumber('lvSpiritCleaner.craftTimerMin', 10),
+        craftDelayMin: readNumber('lvSpiritCleaner.craftDelayMin', 5),
+        craftDelayMax: readNumber('lvSpiritCleaner.craftDelayMax', 10),
         craftTimerMode: localStorage.getItem('lvSpiritCleaner.craftTimerMode') || 'normal',
         nextAutoCraftTime: readNumber('lvSpiritCleaner.nextAutoCraftTime', 0),
 
@@ -1773,6 +2203,16 @@ nirvanaCraftQty: readNumber('lvSpiritCleaner.nirvanaCraftQty', 1),
         return new Promise(function (resolve) {
             loopTimer = setTimeout(resolve, ms);
         });
+    }
+        function getCraftDelay() {
+        var min = Math.max(0.5, state.craftDelayMin || 5);
+        var max = Math.max(min, state.craftDelayMax || 10);
+        return Math.floor(Math.random() * (max - min) * 1000 + min * 1000);
+    }
+    function getNirvanaDelay() {
+        var min = Math.max(0.5, state.nirvanaDelayMin || 5);
+        var max = Math.max(min, state.nirvanaDelayMax || 10);
+        return Math.floor(Math.random() * (max - min) * 1000 + min * 1000);
     }
 
     function toast(message) {
@@ -1971,6 +2411,7 @@ function isEncounterActive() {
     }
 
     var _statusMuted = {};
+    var _statusLog = [];
     function setStatus(text, tone, category) {
         if (category && _statusMuted[category]) return;
         var el = document.getElementById('lvscStatus');
@@ -1983,6 +2424,17 @@ function isEncounterActive() {
             compactEl.textContent = text;
             compactEl.dataset.tone = tone || 'idle';
         }
+        _statusLog.push({t: new Date().toLocaleTimeString(), m: text, o: tone || 'idle'});
+        if (_statusLog.length > 300) _statusLog.splice(0, 50);
+    }
+
+    function showStatusLog() {
+        var ov = document.createElement('div'); ov.id = 'lvscLogOverlay';
+        ov.innerHTML = '<div id="lvscLogBox"><div id="lvscLogHead"><span>📋 运行日志</span><button id="lvscLogClose">✕</button></div><div id="lvscLogList">' + _statusLog.slice().reverse().map(function(l){ return '<div class="lvsc-log-' + l.o + '"><b>' + l.t + '</b> ' + l.m + '</div>'; }).join('') + '</div></div>';
+        document.body.appendChild(ov);
+        ov.onclick = function(e) { if (e.target === ov) { ov.remove(); } };
+        document.getElementById('lvscLogClose').onclick = function() { ov.remove(); };
+        var list = document.getElementById('lvscLogList'); if (list) list.scrollTop = 0;
     }
 
     function updateMeter() {
@@ -2136,6 +2588,10 @@ function isEncounterActive() {
         state.skillWashStoneQuality = num('lvscSkillWashStoneQ', 1, 1);
         state.skillWashTargetType = str('lvscSkillWashTarget', '');
         state.skillWashTargetMin = str('lvscSkillWashMin', '');
+        state.craftDelayMin = num('lvscCraftDelayMin', 0.5, 5);
+        state.craftDelayMax = num('lvscCraftDelayMax', 0.5, 10);
+        state.nirvanaDelayMin = num('lvscNirvanaDelayMin', 0.5, 5);
+        state.nirvanaDelayMax = num('lvscNirvanaDelayMax', 0.5, 10);
     }
 
     // 保证别名：运行循环启动时需要从 UI 读取
@@ -4883,17 +5339,43 @@ for (var i = 0; i < invRes.data.items.length; i++) {
     function masterLog(message) {
         var log = document.getElementById('lvscMasterLog');
         if (!log) return;
-        var time = new Date().toLocaleTimeString();
-        log.textContent = '[' + time + '] ' + message + '\n' + (log.textContent || '');
-        if (log.textContent.length > 8000) {
-            log.textContent = log.textContent.substring(0, 8000);
-        }
-        // 保存到localStorage最多50条，刷新不清空
+        var timeStr = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        var today = new Date().toLocaleDateString('zh-CN');
         var logs = [];
         try { logs = JSON.parse(localStorage.getItem('lvscMasterLogArr') || '[]'); } catch(_) {}
-        logs.unshift('[' + time + '] ' + message);
-        if (logs.length > 50) logs = logs.slice(0, 50);
+        // 兼容旧格式（纯字符串→转对象）
+        if (logs.length && typeof logs[0] === 'string') {
+            logs = logs.map(function(s) {
+                var m = s.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*)/);
+                return m ? { time: m[1], text: m[2] } : { time: '', text: s };
+            });
+        }
+        // 日期分隔
+        var lastDate = localStorage.getItem('lvscMasterLogLastDate');
+        if (lastDate !== today) {
+            localStorage.setItem('lvscMasterLogLastDate', today);
+            logs.push({ time: timeStr, text: '<span style="color:#dbb970">━━━ ' + today + ' ━━━</span>' });
+        }
+        logs.push({ time: timeStr, text: message });
+        if (logs.length > 50) logs = logs.slice(-50);
         localStorage.setItem('lvscMasterLogArr', JSON.stringify(logs));
+        renderMasterLog();
+    }
+    function renderMasterLog() {
+        var log = document.getElementById('lvscMasterLog');
+        if (!log) return;
+        var logs = [];
+        try { logs = JSON.parse(localStorage.getItem('lvscMasterLogArr') || '[]'); } catch(_) {}
+        if (!logs.length) { log.innerHTML = '等待执行...'; return; }
+        // 兼容旧格式
+        if (typeof logs[0] === 'string') {
+            log.textContent = logs.join('\n');
+            return;
+        }
+        log.innerHTML = logs.map(function(e) {
+            return '<span style="color:#8f846f">' + e.time + '</span> ' + e.text;
+        }).join('\n');
+        log.scrollTop = log.scrollHeight;
     }
 
     function craftLog(message) {
@@ -5461,6 +5943,251 @@ for (var i = 0; i < invRes.data.items.length; i++) {
         setStatus('自动秘匣完成', 'idle');
     }
 
+    // ===== 自动抢红包（MutationObserver版） =====
+    var _redPacketRetryTimer = null;
+
+    function startRedPacketMonitor() {
+        if (state.redPacketRunning) return;
+        state.redPacketRunning = true;
+        appendRedPacketLog('监测启动中...');
+
+        tryStartMonitor();
+    }
+
+    function tryStartMonitor() {
+        if (!state.redPacketEnabled || !state.redPacketRunning) return;
+        var target = document.getElementById('chatMessages') || document.getElementById('inlineChatMessages');
+        if (!target) {
+            _redPacketRetryTimer = setTimeout(tryStartMonitor, 2000);
+            return;
+        }
+
+        state.redPacketObserver = new MutationObserver(function(mutations) {
+            if (!state.redPacketEnabled) return;
+            mutations.forEach(function(m) {
+                m.addedNodes.forEach(function(node) {
+                    if (node.nodeType !== 1) return;
+                    var cards = [];
+                    if (node.classList && node.classList.contains('chat-redpacket-card')) {
+                        cards = [node];
+                    } else if (node.querySelectorAll) {
+                        cards = Array.from(node.querySelectorAll('.chat-redpacket-card'));
+                    }
+                    cards.forEach(function(card) {
+                        tryClaimDomCard(card);
+                    });
+                });
+            });
+        });
+        state.redPacketObserver.observe(target, { childList: true, subtree: true });
+        appendRedPacketLog('监测已启动');
+
+        // 扫描已存在的红包
+        setTimeout(function() {
+            document.querySelectorAll('.chat-redpacket-card').forEach(function(card) {
+                tryClaimDomCard(card);
+            });
+        }, 1000);
+    }
+
+    function tryClaimDomCard(card) {
+        if (!state.redPacketEnabled) return;
+        if (card.classList.contains('is-done')) return;
+        var packetId = card.getAttribute('data-packet-id');
+        if (!packetId) return;
+        if (state.redPacketClaimed.indexOf(packetId) !== -1) return;
+
+        var btn = card.querySelector('.chat-redpacket-open');
+        if (!btn) return;
+        if (btn.disabled) return;
+        var txt = (btn.textContent || '').trim();
+        if (txt.indexOf('已领取') !== -1 || txt.indexOf('已领完') !== -1) return;
+
+        state.redPacketClaimed.push(packetId);
+        if (state.redPacketClaimed.length > 500) state.redPacketClaimed = state.redPacketClaimed.slice(-300);
+        localStorage.setItem('lvSpiritCleaner.redPacketClaimed', JSON.stringify(state.redPacketClaimed));
+
+        var delay = 300 + Math.floor(Math.random() * 400);
+        setTimeout(function() {
+            doClaimRedPacket(packetId);
+        }, delay);
+    }
+
+    async function doClaimRedPacket(packetId) {
+        try {
+            var api = gameApi();
+            if (!api) return;
+            var res = await api.post('/api/chat/red-packet/claim', { packetId: parseInt(packetId, 10) });
+            if (res && res.code === 200 && res.data && res.data.success) {
+                var amount = res.data.claimAmount || 0;
+                state.redPacketTotal++;
+                state.redPacketTotalAmount += amount;
+                state.redPacketToday++;
+                state.redPacketTodayAmount += amount;
+                state.redPacketWeek++;
+                state.redPacketWeekAmount += amount;
+                updateRedPacketStats();
+                appendRedPacketLog('抢到：' + formatNumber(amount) + '灵石');
+            }
+        } catch(e) {
+            // 静默处理
+        }
+    }
+
+    function stopRedPacketMonitor() {
+        state.redPacketRunning = false;
+        if (state.redPacketObserver) {
+            state.redPacketObserver.disconnect();
+            state.redPacketObserver = null;
+        }
+        appendRedPacketLog('监测已停止');
+    }
+
+    function updateRedPacketStats() {
+        var el = document.getElementById('lvscRedPacketStats');
+        if (!el) return;
+        localStorage.setItem('lvSpiritCleaner.redPacketTotal', state.redPacketTotal);
+        localStorage.setItem('lvSpiritCleaner.redPacketTotalAmount', state.redPacketTotalAmount);
+        localStorage.setItem('lvSpiritCleaner.redPacketToday', state.redPacketToday);
+        localStorage.setItem('lvSpiritCleaner.redPacketTodayAmount', state.redPacketTodayAmount);
+        localStorage.setItem('lvSpiritCleaner.redPacketYesterday', state.redPacketYesterday);
+        localStorage.setItem('lvSpiritCleaner.redPacketYesterdayAmount', state.redPacketYesterdayAmount);
+        localStorage.setItem('lvSpiritCleaner.redPacketWeek', state.redPacketWeek);
+        localStorage.setItem('lvSpiritCleaner.redPacketWeekAmount', state.redPacketWeekAmount);
+        el.innerHTML = '今日：' + state.redPacketToday + '次 / ' + formatNumber(state.redPacketTodayAmount) + '灵石<br>昨日：' + state.redPacketYesterday + '次 / ' + formatNumber(state.redPacketYesterdayAmount) + '灵石<br>近7天：' + state.redPacketWeek + '次 / ' + formatNumber(state.redPacketWeekAmount) + '灵石<br>累计：' + state.redPacketTotal + '次 / ' + formatNumber(state.redPacketTotalAmount) + '灵石';
+    }
+
+    function appendRedPacketLog(msg) {
+        var el = document.getElementById('lvscRedPacketLog');
+        if (!el) return;
+        var time = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        el.textContent = '[' + time + '] ' + msg + '\n' + el.textContent;
+    }
+
+    function formatNumber(n) {
+        if (n >= 100000000) return (n / 100000000).toFixed(2) + '亿';
+        if (n >= 10000) return (n / 10000).toFixed(1) + '万';
+        return String(n);
+    }
+
+    // ===== 竞技场模拟 =====
+    async function loadArenaOpponents() {
+        if (!gameApi()) { setStatus('API不可用', 'warn'); return; }
+        var sel = document.getElementById('lvscArenaOpponent');
+        if (!sel) return;
+        try {
+            setStatus('正在获取对手列表...', 'run');
+            var res = await gameApi().get('/api/arena/simulation-opponents');
+            if (res && res.code === 200 && Array.isArray(res.data)) {
+                sel.innerHTML = '';
+                res.data.forEach(function(op, idx) {
+                    var opt = document.createElement('option');
+                    var opId = op.id || op.targetId || op.playerId || idx;
+                    var opName = op.name || op.playerName || op.nickname || ('对手' + opId);
+                    var opRealm = op.realm || op.level || '';
+                    opt.value = opId;
+                    opt.textContent = opName + (opRealm ? '[' + opRealm + ']' : '');
+                    sel.appendChild(opt);
+                });
+                setStatus('已刷新 ' + res.data.length + ' 个对手', 'idle');
+            } else {
+                setStatus('获取对手失败：' + ((res && res.message) || '未知错误'), 'warn');
+            }
+        } catch(err) {
+            setStatus('获取对手异常：' + err.message, 'warn');
+        }
+    }
+
+    async function startArenaSimulation() {
+        if (!gameApi()) { setStatus('API不可用', 'warn'); return; }
+        if (state.arenaSimRunning) return;
+        var sel = document.getElementById('lvscArenaOpponent');
+        var countInput = document.getElementById('lvscArenaSimCount');
+        if (!sel || !countInput) return;
+        var targetId = sel.value;
+        if (!targetId) { setStatus('请先选择对手', 'warn'); return; }
+        var count = parseInt(countInput.value, 10) || 100;
+        if (count < 1) count = 1;
+        if (count > 9999) count = 9999;
+        var intervalSec = parseFloat(document.getElementById('lvscArenaSimInterval')?.value) || 5;
+        var intervalMs = Math.max(0, intervalSec * 1000);
+
+        state.arenaSimRunning = true;
+        state.arenaSimWin = 0;
+        state.arenaSimLose = 0;
+        state.arenaSimTotal = 0;
+        state.arenaSimCurrentOpponent = targetId;
+        
+        var startBtn = document.getElementById('lvscArenaStartBtn');
+        var stopBtn = document.getElementById('lvscArenaStopBtn');
+        var refreshBtn = document.getElementById('lvscArenaRefreshBtn');
+        if (startBtn) startBtn.style.display = 'none';
+        if (stopBtn) stopBtn.style.display = '';
+        if (refreshBtn) refreshBtn.disabled = true;
+        
+        appendArenaLog('开始模拟：对手ID=' + targetId + '，目标' + count + '局');
+        
+        for (var i = 0; i < count && state.arenaSimRunning; i++) {
+            try {
+                var res = await gameApi().post('/api/arena/simulate-fight', { targetId: parseInt(targetId, 10) });
+                state.arenaSimTotal++;
+                if (res && res.code === 200 && res.data) {
+                    var isWin = false;
+                    var d = res.data;
+                    if (typeof d.winnerId !== 'undefined' && typeof d.targetId !== 'undefined') {
+                        isWin = (d.winnerId !== d.targetId);
+                    }
+                    if (isWin) {
+                        state.arenaSimWin++;
+                        appendArenaLog('第' + (i+1) + '局：胜利');
+                    } else {
+                        state.arenaSimLose++;
+                        appendArenaLog('第' + (i+1) + '局：失败');
+                    }
+                } else {
+                    state.arenaSimLose++;
+                    appendArenaLog('第' + (i+1) + '局：异常 ' + ((res && res.message) || ''));
+                }
+            } catch(err) {
+                state.arenaSimTotal++;
+                state.arenaSimLose++;
+                appendArenaLog('第' + (i+1) + '局：错误 ' + err.message);
+            }
+            updateArenaStats();
+            if (i < count - 1) {
+                await sleep(intervalMs);
+
+            }
+        }
+        
+        state.arenaSimRunning = false;
+        if (startBtn) startBtn.style.display = '';
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (refreshBtn) refreshBtn.disabled = false;
+        appendArenaLog('模拟结束：共 ' + state.arenaSimTotal + ' 局，胜 ' + state.arenaSimWin + '，败 ' + state.arenaSimLose);
+        setStatus('竞技场模拟完成', 'idle');
+    }
+
+    function stopArenaSimulation() {
+        state.arenaSimRunning = false;
+        appendArenaLog('手动停止');
+        setStatus('竞技场模拟已停止', 'idle');
+    }
+
+    function updateArenaStats() {
+        var el = document.getElementById('lvscArenaStats');
+        if (!el) return;
+        var rate = state.arenaSimTotal > 0 ? (state.arenaSimWin / state.arenaSimTotal * 100).toFixed(1) : 0;
+        el.textContent = '总场次：' + state.arenaSimTotal + ' | 胜场：' + state.arenaSimWin + ' | 胜率：' + rate + '%';
+    }
+
+    function appendArenaLog(msg) {
+        var el = document.getElementById('lvscArenaLog');
+        if (!el) return;
+        var time = new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        el.textContent = '[' + time + '] ' + msg + '\n' + el.textContent;
+    }
+
     function getMonitorTargetSpirit(info) {
         var maxSpirit = Number(info && info.maxSpirit || 0);
         if (state.monitorStartSpirit > 0) return Math.max(1, Math.floor(maxSpirit * state.monitorStartSpirit / 100));
@@ -5598,6 +6325,208 @@ for (var i = 0; i < invRes.data.items.length; i++) {
             setStatus('已收功，等待手动停止或开启自动继续探索', 'warn');
         }
         return true;
+    }
+
+    // 快速清理：神识耗尽才冥想→夜晚打怪（50→20→10→5倍降序）→循环
+    // 快速清理：神识耗尽才冥想→夜晚打怪（50→20→10→5倍降序）→循环
+    async function quickClearLoop() {
+        if (quickClearRunning || running) return;
+        if (monitoringSpirit) { monitoringSpirit = false; updateMeter(); }
+        if (autoInscriptionRunning) { setStatus('铭文洗练中，不能启动快速清理', 'warn'); return; }
+        quickClearRunning = true;
+        try { localStorage.setItem('lvSpiritCleaner.quickClearRunning', '1'); } catch(_) {}
+        syncSettingsFromUi();
+        updateMeter();
+        setStatus('⚡ 快速清理启动 | 冥想目标' + (state.quickClearTargetPct || 95) + '%', 'run');
+        var TARGET_PCT = (state.quickClearTargetPct || 95) / 100;
+        var savedKeepMultiplier = state.keepCurrentMultiplier;
+        var savedPreferMultiplier = state.preferMultiplier;
+        var _firstChargeDone = false;
+        state.keepCurrentMultiplier = false;
+        state.preferMultiplier = '50';
+
+        while (quickClearRunning) {
+            await refreshPlayer();
+            if (state.autoBreakthrough) await autoBreakthroughCheck();
+            if (state.autoOriginRepair) await autoOriginRepairCheck();
+            if (state.autoTeachDaily) await autoTeachDaily();
+            if (state.autoGiftItemsDaily) await autoGiftItemsDaily();
+            if (state.autoGiftStonesDaily) await autoGiftStonesDaily();
+            if (state.autoMasterRequests) await handleMasterRequests();
+
+            if (await checkEventBlockers()) {
+                await sleep(state.delayMs);
+                continue;
+            }
+
+            var info = getSpiritInfo();
+            if (info.player && (info.player.isDead || window.playerDead)) {
+                if (state.autoReviveDeath) {
+                    setStatus('💀 陨落，等待复活...', 'warn');
+                    await sleep(10000);
+                    continue;
+                }
+                setStatus('💀 角色陨落，停止', 'warn');
+                break;
+            }
+
+            // 如果正在冥想但神识够打怪，先收功再继续
+            if (info.player && info.player.isMeditating && info.spirit >= info.cost) {
+                setStatus('🧘 收功中...', 'run');
+                await stopMeditationAndRefresh();
+                await sleep(500);
+                continue;
+            }
+
+            // 首次神识不足设定%先冥想到位，后续神识耗尽才冥想
+            if (info.spirit < info.cost || (!_firstChargeDone && info.spirit < Math.floor(info.maxSpirit * TARGET_PCT))) {
+                // 冥想前切神识套
+                if (state.equipSwapEnabled && state.equipSpiritSlot) {
+                    setStatus('👘 切换神识套...', 'run', 'Equip');
+                    await equipLoadoutApply(state.equipSpiritSlot);
+                }
+                var targetSpirit = Math.floor(info.maxSpirit * TARGET_PCT);
+                setStatus('🧘 神识耗尽(' + info.spirit + '/' + info.maxSpirit + ')，开始冥想→' + targetSpirit, 'run');
+                forceClearMeditationUi();
+                window._meditationActive = false;
+                window._meditationInProgress = false;
+                if (!info.player.isMeditating) {
+                    var startRes = await gameApi().post('/api/game/meditate/start', {});
+                    if (!startRes || startRes.code !== 200) {
+                        setStatus('❌ 冥想启动失败，重试', 'warn');
+                        await sleep(5000);
+                        continue;
+                    }
+                    if (typeof window.startMeditationUI === 'function') { try { window.startMeditationUI(); } catch (_) {} }
+                    await sleep(2000);
+                }
+                var _medStartedAt = Date.now();
+                var _spiritPerMinute = 0;
+                var _lastMedReport = Date.now();
+                while (quickClearRunning) {
+                    await sleep(5000);
+                    await refreshPlayer();
+                    var si = getSpiritInfo();
+                    if (si.spirit >= targetSpirit) break;
+                    var statusRes = await gameApi().get('/api/game/meditate/status');
+                    if (statusRes && statusRes.code === 200 && statusRes.data && isMeditatingStatus(statusRes.data)) {
+                        _spiritPerMinute = Number(statusRes.data.spiritPerMinute || _spiritPerMinute || 0);
+                        var progress = estimateMeditateProgress(statusRes.data, info, _spiritPerMinute, _medStartedAt);
+                        setStatus('🧘 冥想中：' + progress.current + ' + ' + progress.gained + ' = ' + progress.total + '/' + targetSpirit, 'run');
+                        if (Date.now() - _lastMedReport > 1200000) {
+                            _lastMedReport = Date.now();
+                            var remainMin = _spiritPerMinute > 0 ? Math.ceil((targetSpirit - progress.total) / _spiritPerMinute) : '?';
+                            wecomEnqueue('🧘 快速清理冥想中', '预计收工神识：' + progress.total + '/' + targetSpirit + '\n还需约：' + remainMin + '分钟');
+                        }
+                        if (progress.total >= targetSpirit) break;
+                    } else if (_spiritPerMinute > 0) {
+                        var fbProgress = estimateMeditateProgress({}, info, _spiritPerMinute, _medStartedAt);
+                        setStatus('🧘 冥想中：' + fbProgress.current + ' + ' + fbProgress.gained + ' = ' + fbProgress.total + '/' + targetSpirit, 'run');
+                        if (fbProgress.total >= targetSpirit) break;
+                    } else {
+                        // 冥想中断，重新启动
+                        if (!si.player.isMeditating) {
+                            setStatus('🧘 冥想中断，重新开始...', 'warn');
+                            await gameApi().post('/api/game/meditate/start', {});
+                            await sleep(2000);
+                        }
+                    }
+                }
+                if (!quickClearRunning) break;
+                _firstChargeDone = true;
+                setStatus('✅ 神识达' + Math.round(getSpiritInfo().spirit / info.maxSpirit * 100) + '%，收功', 'run');
+                await stopMeditationAndRefresh();
+                // 收功后切回战斗套
+                if (state.equipSwapEnabled && state.equipCombatSlot) {
+                    setStatus('👘 切回战斗套...', 'run', 'Equip');
+                    await equipLoadoutApply(state.equipCombatSlot);
+                }
+                await sleep(500);
+                continue;
+            }
+
+            // 等待夜晚
+            var _dayNotified = false;
+            while (quickClearRunning && !isGameNight()) {
+                if (!_dayNotified) {
+                    setStatus('☀️ 白天（神识' + Math.round(info.spirit / info.maxSpirit * 100) + '%），等待夜晚...', 'run');
+                    _dayNotified = true;
+                }
+                await sleep(30000);
+                await refreshPlayer();
+                info = getSpiritInfo();
+                if (info.spirit < info.cost) break;
+            }
+            if (!quickClearRunning) break;
+            if (info.spirit < info.cost) continue;
+
+            // 页面就绪检查
+            if (!gameApi() || typeof window.handleExplore !== 'function') {
+                setStatus('⏳ 页面未就绪，等待...', 'warn');
+                await sleep(5000);
+                continue;
+            }
+
+            // 夜晚打怪前：切战斗套 + buff 维护
+            if (state.equipSwapEnabled && state.equipCombatSlot) {
+                setStatus('👘 切换战斗套...', 'run', 'Equip');
+                await equipLoadoutApply(state.equipCombatSlot);
+            }
+            try {
+                if (state.autoNirvanaPill) { await ensureNirvanaPill(); }
+                if (state.autoMaintainLuck) { await autoMaintainLuckCheck(); }
+                if (state.autoVoidBody && !hasVoidBodyBuff()) { await ensureVoidBodyBuff(false); }
+                if (state.autoHiddenCharm) { await ensureHiddenCharm(false); }
+            } catch (e) {
+                console.warn('[LingVerse] quick clear buff maintenance failed:', e);
+            }
+
+            // 夜晚打怪
+            setStatus('🌙 夜晚！开始打怪（神识' + Math.round(info.spirit / info.maxSpirit * 100) + '%）', 'run');
+            var _exploreCnt = 0;
+            while (quickClearRunning && isGameNight()) {
+                var fi = getSpiritInfo();
+                if (fi.player && (fi.player.isDead || window.playerDead)) break;
+                if (fi.spirit < fi.cost) {
+                    setStatus('🌙 神识不足，停止打怪', 'run');
+                    break;
+                }
+
+                applyExploreMultiplier();
+                _exploreCnt++;
+
+                try {
+                    var result = await window.handleExplore();
+                    updateMeter();
+                    var _fi2 = getSpiritInfo();
+                    var _curMul = state.lastUsedMultiplier || '?';
+                    setStatus('🌙 ×' + _curMul + '倍 第' + _exploreCnt + '次 | 神识' + Math.round(_fi2.spirit / _fi2.maxSpirit * 100) + '%', 'run');
+                    if (result === 'stop') {
+                        await sleep(500);
+                        if (!await checkEventBlockers()) {
+                            await refreshPlayer();
+                            var ae = getSpiritInfo();
+                            if (ae.spirit < ae.cost) break;
+                        }
+                        await sleep(10000);
+                    }
+                } catch (err) {
+                    console.warn('[LingVerse] quick clear explore failed', err);
+                    setStatus('⚠️ 探索失败，重试中', 'warn');
+                    await sleep(state.delayMs);
+                }
+                await sleep(state.delayMs + Math.floor(Math.random() * 350));
+            }
+        }
+
+        state.keepCurrentMultiplier = savedKeepMultiplier;
+        state.preferMultiplier = savedPreferMultiplier;
+        quickClearRunning = false;
+        try { localStorage.removeItem('lvSpiritCleaner.quickClearRunning'); } catch(_) {}
+        updateMeter();
+        var btn = document.getElementById('lvscQuickClearBtn');
+        if (btn) { btn.textContent = '启动'; btn.style.background = 'linear-gradient(135deg,#6bc9a0,#4a8)'; }
+        setStatus('快速清理已停止', 'idle');
     }
 
     // 神识不足时自动转入监测模式（等待自然恢复后自动重启清理）
@@ -5806,6 +6735,7 @@ for (var i = 0; i < invRes.data.items.length; i++) {
 
     async function runLoop() {
         if (running) return;
+        if (quickClearRunning) { setStatus('快速清理运行中', 'warn'); return; }
         if (monitoringSpirit) { monitoringSpirit = false; updateMeter(); }
         if (autoInscriptionRunning) {
             setStatus('铭文洗练中，不能开始清理', 'warn');
@@ -6185,20 +7115,28 @@ function stop(reason) {
         function moveResize(event) {
             if (!resizing) return;
             var point = resizePoint(event);
-            var maxWidth = Math.max(300, window.innerWidth - 16);
-            var maxHeight = Math.max(260, window.innerHeight - 16);
-            var nextWidth = Math.max(300, Math.min(maxWidth, startWidth + point.clientX - startX));
-            var nextHeight = Math.max(260, Math.min(maxHeight, startHeight + point.clientY - startY));
-            var nextLeft = startLeft;
-            var nextTop = startTop;
-            if (startRight > window.innerWidth - 40) nextLeft = Math.max(8, startRight - nextWidth);
-            if (startBottom > window.innerHeight - 40) nextTop = Math.max(8, startBottom - nextHeight);
-            if (nextLeft + nextWidth > window.innerWidth - 8) nextLeft = Math.max(8, window.innerWidth - nextWidth - 8);
-            if (nextTop + nextHeight > window.innerHeight - 8) nextTop = Math.max(8, window.innerHeight - nextHeight - 8);
-            panel.style.left = Math.round(nextLeft) + 'px';
-            panel.style.top = Math.round(nextTop) + 'px';
-            panel.style.width = Math.round(nextWidth) + 'px';
-            panel.style.height = Math.round(nextHeight) + 'px';
+            var isEmbedded = panel.classList.contains('lvsc-embedded');
+            if (isEmbedded) {
+                var minW = 300, maxW = Math.max(300, window.innerWidth - 200);
+                var nextW = Math.max(minW, Math.min(maxW, startWidth - (point.clientX - startX)));
+                panel.style.flex = '0 0 ' + Math.round(nextW) + 'px';
+                panel.style.width = Math.round(nextW) + 'px';
+            } else {
+                var maxWidth = Math.max(300, window.innerWidth - 16);
+                var maxHeight = Math.max(260, window.innerHeight - 16);
+                var nextWidth = Math.max(300, Math.min(maxWidth, startWidth + point.clientX - startX));
+                var nextHeight = Math.max(260, Math.min(maxHeight, startHeight + point.clientY - startY));
+                var nextLeft = startLeft;
+                var nextTop = startTop;
+                if (startRight > window.innerWidth - 40) nextLeft = Math.max(8, startRight - nextWidth);
+                if (startBottom > window.innerHeight - 40) nextTop = Math.max(8, startBottom - nextHeight);
+                if (nextLeft + nextWidth > window.innerWidth - 8) nextLeft = Math.max(8, window.innerWidth - nextWidth - 8);
+                if (nextTop + nextHeight > window.innerHeight - 8) nextTop = Math.max(8, window.innerHeight - nextHeight - 8);
+                panel.style.left = Math.round(nextLeft) + 'px';
+                panel.style.top = Math.round(nextTop) + 'px';
+                panel.style.width = Math.round(nextWidth) + 'px';
+                panel.style.height = Math.round(nextHeight) + 'px';
+            }
             event.preventDefault();
         }
 
@@ -6206,10 +7144,14 @@ function stop(reason) {
             if (!resizing) return;
             resizing = false;
             var rect = panel.getBoundingClientRect();
-            localStorage.setItem('lvSpiritCleaner.panelWidth', String(Math.round(rect.width)));
-            localStorage.setItem('lvSpiritCleaner.panelHeight', String(Math.round(rect.height)));
-            localStorage.setItem('lvSpiritCleaner.panelLeft', String(Math.round(rect.left)));
-            localStorage.setItem('lvSpiritCleaner.panelTop', String(Math.round(rect.top)));
+            if (panel.classList.contains('lvsc-embedded')) {
+                localStorage.setItem('lvSpiritCleaner.embeddedWidth', String(Math.round(rect.width)));
+            } else {
+                localStorage.setItem('lvSpiritCleaner.panelWidth', String(Math.round(rect.width)));
+                localStorage.setItem('lvSpiritCleaner.panelHeight', String(Math.round(rect.height)));
+                localStorage.setItem('lvSpiritCleaner.panelLeft', String(Math.round(rect.left)));
+                localStorage.setItem('lvSpiritCleaner.panelTop', String(Math.round(rect.top)));
+            }
         }
 
         handle.addEventListener('mousedown', beginResize);
@@ -6783,8 +7725,10 @@ function stop(reason) {
         var style = document.createElement('style');
         style.id = 'lvscStyle';
         style.textContent = [
-            '#lvscPanel{position:fixed;right:18px;bottom:18px;z-index:' + PANEL_Z_INDEX + ';width:min(460px,calc(100vw - 36px));height:min(720px,calc(100vh - 36px));min-width:300px;min-height:260px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:rgba(17,20,29,.94);color:#f5f1e8;border:1px solid rgba(219,185,112,.45);box-shadow:0 16px 48px rgba(0,0,0,.38);border-radius:10px;font:13px/1.45 "Microsoft YaHei",sans-serif;overflow:hidden;resize:none;touch-action:none;container-type:inline-size}',
-            '#lvscPanel header{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;padding:10px 12px;background:rgba(219,185,112,.12);font-weight:700}',
+            '#lvscPanel{position:fixed;right:18px;bottom:18px;z-index:' + PANEL_Z_INDEX + ';width:min(460px,calc(100vw - 36px));height:min(720px,calc(100vh - 36px));min-width:300px;min-height:260px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);display:flex;flex-direction:column;background:rgba(17,20,29,.94);color:#f5f1e8;border:1px solid rgba(219,185,112,.45);box-shadow:0 16px 48px rgba(0,0,0,.38);border-radius:10px;font-size:13px;line-height:1.45;font-family:"Microsoft YaHei",sans-serif;overflow:hidden;resize:none;touch-action:none;container-type:inline-size;opacity:0;transform:scale(.95);transition:opacity .22s ease,transform .22s ease,border-radius .28s ease,min-height .28s ease,max-height .28s ease,width .28s ease}',
+            '#lvscPanel.lvsc-show{opacity:1!important;transform:scale(1)!important}',
+            '#lvscPanel.lvsc-hide{opacity:0!important;transform:scale(.95)!important;pointer-events:none!important}',
+            '#lvscPanel header{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;padding:10px 12px;font-weight:700;background:#181e24;color:#d8dde0}',
             '#lvscTitle{display:flex;align-items:center;gap:8px;min-width:0}',
             '#lvscTitleText{white-space:nowrap}',
             '#lvscHeaderActions{display:flex;align-items:center;gap:6px}',
@@ -6793,58 +7737,106 @@ function stop(reason) {
             '.lvsc-action-btn:hover{opacity:.9}',
             '.lvsc-stop-btn{background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28)!important;font-weight:700}',
             '.lvsc-stop-btn:hover{background:rgba(255,107,107,.28)}',
-            '.lvsc-rfr-btn{background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;font-size:11px}',
+            '.lvsc-rfr-btn{background:rgba(255,255,255,.08);color:#000!important;border:1px solid rgba(255,255,255,.1)!important;font-size:11px}',
             '.lvsc-rfr-btn:hover{background:rgba(255,255,255,.14)}',
             '#lvscClose,#lvscCollapseBtn,#lvscExpandBtn{height:28px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.1)!important}',
             '#lvscClose{width:28px}',
             '#lvscCollapseBtn,#lvscExpandBtn{padding:0 8px}',
-            '#lvscStatus{flex:0 0 auto;margin:0;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);background:rgba(155,231,195,.08);font-size:12px;color:#cfc6b2;min-height:18px;white-space:normal;overflow-wrap:anywhere}',
+            '#lvscStatus{flex:0 0 auto;margin:0;padding:8px 12px;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);background:rgba(155,231,195,.08);font-size:12px;color:#cfc6b2;min-height:18px;white-space:normal;overflow-wrap:anywhere;cursor:pointer;user-select:none}#lvscStatus:hover{background:rgba(155,231,195,.16)}',
+            '#lvscLogOverlay{position:fixed;inset:0;z-index:2147483100;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center}',
+            '#lvscLogBox{width:min(680px,94vw);max-height:82vh;display:flex;flex-direction:column;background:rgba(17,20,29,.96);border:1px solid rgba(219,185,112,.45);border-radius:10px;overflow:hidden}',
+            '#lvscLogHead{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.1);color:#dbb970;font-weight:700;font-size:13px}',
+            '#lvscLogClose{width:28px;height:28px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.1);border-radius:6px;cursor:pointer;font-size:16px;line-height:26px;text-align:center}',
+            '#lvscLogList{flex:1;overflow:auto;padding:10px 14px;font-size:11px;line-height:1.6;color:#cfc6b2;max-height:70vh}#lvscLogList div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.04)}',
+            '#lvscLogList .lvsc-log-run{color:#9be7c3}#lvscLogList .lvsc-log-warn{color:#ffd166}#lvscLogList .lvsc-log-err{color:#ff6b6b}',
             '#lvscStatus[data-tone=run]{color:#9be7c3;background:rgba(155,231,195,.11)}',
             '#lvscStatus[data-tone=warn]{color:#ffd166;background:rgba(255,209,102,.11)}',
             '#lvscBody{flex:1 1 auto;min-height:0;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}',
-            '#lvscCompactBar{display:none;align-items:center;gap:8px;flex:0 0 auto;padding:8px 10px;min-width:0}',
+            '#lvscCompactBar{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:0 10px;min-width:0;max-height:0;opacity:0;overflow:hidden;transition:max-height .28s ease,opacity .22s ease,padding .28s ease}',
+
             '#lvscCompactSpirit{color:#d8b4fe;white-space:nowrap;font-size:12px}',
             '#lvscCompactStatus{flex:1;min-width:76px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#cfc6b2}',
             '#lvscCompactStatus[data-tone=run]{color:#9be7c3}',
             '#lvscCompactStatus[data-tone=warn]{color:#ffd166}',
             '#lvscCompactRunBtn,#lvscCompactMonitorBtn{height:30px;min-width:52px;background:#dbb970;color:#17141d}',
             '#lvscCompactMonitorBtn{background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
-            '#lvscPanel.lvsc-collapsed{width:min(520px,calc(100vw - 16px))!important;height:auto!important;min-width:0;min-height:0;max-width:96vw;overflow:hidden;border-radius:999px}',
-            '#lvscPanel.lvsc-collapsed header{display:none}',
-            '#lvscPanel.lvsc-collapsed #lvscStatus{display:none}',
-            '#lvscPanel.lvsc-collapsed #lvscBody{display:none}',
-            '#lvscPanel.lvsc-collapsed #lvscActions{display:none}',
-            '#lvscPanel.lvsc-collapsed #lvscCompactBar{display:flex}',
-            '#lvscPanel.lvsc-collapsed #lvscResizeHandle{display:none}',
+            '#lvscPanel header,#lvscPanel #lvscStatus,#lvscPanel #lvscBody,#lvscPanel #lvscActions{transition:max-height .28s ease,opacity .22s ease,margin .28s ease,padding .28s ease}',
+            '#lvscPanel.lvsc-collapsed{width:min(520px,calc(100vw - 16px))!important;height:auto!important;min-width:0;min-height:0;max-width:96vw;overflow:hidden;border-radius:26px}',
+            '#lvscPanel.lvsc-collapsed header{max-height:0!important;min-height:0!important;opacity:0!important;overflow:hidden!important;margin:0!important;padding:0!important}',
+            '#lvscPanel.lvsc-collapsed #lvscStatus{max-height:0!important;min-height:0!important;opacity:0!important;overflow:hidden!important;margin:0!important;padding:0!important}',
+            '#lvscPanel.lvsc-collapsed #lvscBody{max-height:0!important;min-height:0!important;flex:0 0 0!important;opacity:0!important;overflow:hidden!important;margin:0!important;padding:0!important;gap:0!important}',
+            '#lvscPanel.lvsc-collapsed #lvscActions{max-height:0!important;min-height:0!important;opacity:0!important;overflow:hidden!important;margin:0!important;padding:0!important}',
+            '#lvscPanel.lvsc-collapsed #lvscCompactBar{max-height:60px!important;min-height:0!important;opacity:1!important;overflow:visible!important;padding:8px 10px!important}',            '#lvscPanel.lvsc-collapsed #lvscResizeHandle{display:none}',
+            '#lvscPanel.lvsc-embedded{position:relative!important;right:auto!important;bottom:auto!important;left:auto!important;top:auto!important;width:100%!important;max-width:none!important;min-width:0!important;height:100%!important;max-height:none!important;margin:0!important;border-radius:0!important;border-left:1px solid var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important;border-right:none!important;border-bottom:none!important;border-top:none!important;flex:0 0 420px;z-index:auto!important;box-shadow:none!important;background:var(--lvsc-panel,var(--bg-panel,#181e24))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;font-weight:inherit!important}',
+            '#lvscPanel.lvsc-embedded header{background:var(--lvsc-panel,var(--bg-panel,#181e24))!important;border-bottom:1px solid var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important;cursor:default!important;padding:10px 14px!important}',
+            '#lvscPanel.lvsc-embedded #lvscTitleText{color:#b8942e!important;font-size:14px!important;letter-spacing:.5px!important}',
+
+            '#lvscPanel.lvsc-embedded #lvscResizeHandle{display:block!important;position:absolute;left:-4px;right:auto!important;bottom:0!important;top:0!important;width:8px!important;height:auto!important;cursor:ew-resize!important;border-radius:0!important;background:transparent!important;opacity:1!important}',
+            '#lvscPanel.lvsc-embedded #lvscResizeHandle:hover{background:rgba(219,185,112,.18)!important}',
+            '#lvscPanel.lvsc-embedded #lvscClose{display:none!important}',
+            '#lvscPanel.lvsc-embedded.lvsc-collapsed{flex:0 0 auto!important;width:100%!important;height:auto!important;display:none!important}',
+            '@media (max-width: 768px){#lvscPanel.lvsc-embedded{position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;height:100dvh!important;z-index:10000!important;flex:none!important;border:1px solid var(--border-color,#d5d0c8)!important;border-radius:0!important;overflow-y:auto!important;display:flex!important;flex-direction:column!important;background:var(--lvsc-panel,var(--bg-panel,#181e24))!important}}',
+            '@media (max-width: 768px){#lvscPanel.lvsc-embedded #lvscClose{display:flex!important}}',
+            '#lvscPanel.lvsc-embedded.lvsc-mobile-hidden{display:none!important}',
+            '@media (max-width: 768px){#lvscPanel.lvsc-embedded #lvscBody{background:var(--lvsc-panel,var(--bg-panel,#181e24))!important;padding:16px!important}}',
+            '#lvscPanel.lvsc-embedded .lvsc-tab:not(.lvsc-active){opacity:.65!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-tab:not(.lvsc-active):hover{opacity:1!important;background:rgba(255,255,255,.08)!important}',
+            '@media (max-width: 768px){#lvscPanel.lvsc-embedded::before{content:"";position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,.6);z-index:-1}}',
+            '#lvscPanel.lvsc-embedded #lvscTabs{background:var(--lvsc-panel,var(--bg-panel,#181e24))!important;border-bottom-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-tab{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-tab.lvsc-active{background:var(--lvsc-accent,var(--accent-gold,#dbb970))!important;color:var(--lvsc-bg,var(--bg-body,#12161a))!important;border-color:var(--lvsc-accent,var(--accent-gold,#dbb970))!important;font-weight:700!important}',
+            '#lvscPanel.lvsc-embedded #lvscActions{background:var(--lvsc-panel,var(--bg-panel,#181e24))!important;border-top-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded #lvscStatus{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded label{color:var(--lvsc-text,var(--text-primary,#d8dde0))!important}',
+            '#lvscPanel.lvsc-embedded input[type=number],#lvscPanel.lvsc-embedded input[type=text],#lvscPanel.lvsc-embedded select{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded select option{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-section{background:transparent!important;border:none!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-category{background:transparent!important;border-color:transparent!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-meter{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-rfr-btn{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-stop-btn{background:rgba(255,107,107,.12)!important;color:#ff6b6b!important;border-color:rgba(255,107,107,.24)!important}',
+            '#lvscPanel.lvsc-embedded #lvscClose,#lvscPanel.lvsc-embedded #lvscCollapseBtn,#lvscPanel.lvsc-embedded #lvscExpandBtn{background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
+            '#lvscPanel.lvsc-embedded #lvscCompactStatus{color:var(--bs-body-color,#333)!important}',
+            '#lvscPanel.lvsc-embedded #lvscCompactStatus{color:var(--lvsc-text,var(--text-primary,#d8dde0))!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-category-title small{color:var(--lvsc-text,var(--text-secondary,#a9b1b6))!important}',
             '#lvscPanel label{display:grid;gap:4px;min-width:0;color:#cfc6b2;font-size:12px}',
+            '#lvscPanel.lvsc-embedded #lvscBody,#lvscPanel.lvsc-embedded label,#lvscPanel.lvsc-embedded .lvsc-tab,#lvscPanel.lvsc-embedded #lvscStatus{font-weight:600!important}',
+            '#lvscPanel.lvsc-embedded .lvsc-section-title-row{color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;font-weight:700!important}',
             '#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{width:100%;height:29px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;padding:0 8px;font-size:12px}',
             '#lvscPanel input[type=checkbox]{margin-right:6px}',
-            '#lvscPanel select option{background:#17141d;color:#fff}',
+            '#lvscPanel.lvsc-embedded #lvscClose,#lvscPanel.lvsc-embedded #lvscCollapseBtn,#lvscPanel.lvsc-embedded #lvscExpandBtn{background:transparent!important;color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;border-color:transparent!important}',
             '.lvsc-meter{display:grid;gap:7px;padding:9px;border:1px solid rgba(216,180,254,.2);border-radius:8px;background:rgba(216,180,254,.05)}',
             '#lvscTabs{position:sticky;top:-12px;z-index:3;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:-2px -2px 0;padding:4px 2px 6px;background:rgba(17,20,29,.96);border-bottom:1px solid rgba(255,255,255,.08)}',
             '.lvsc-tab{height:30px;padding:0 6px;background:rgba(255,255,255,.06);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-            '.lvsc-tab.lvsc-active{background:#dbb970;color:#17141d;border-color:#dbb970!important}',
-            '.lvsc-category{display:grid;gap:9px;min-width:0;padding:10px;border:1px solid rgba(219,185,112,.16);border-radius:9px;background:rgba(255,255,255,.025)}',
+            '.lvsc-tab.lvsc-active{background:var(--lvsc-accent,var(--accent-gold,#dbb970));color:var(--lvsc-bg,var(--bg-body,#17141d));border-color:var(--lvsc-accent,var(--accent-gold,#dbb970))!important}',
+            '.lvsc-big-cat-title-row{color:#dbb970;text-shadow:0 1px 3px rgba(0,0,0,.2)}',
+            '.lvsc-big-cat-title-row{color:#1a1a2e!important;font-weight:800!important}',
+            '.theme-dark .lvsc-big-cat-title-row{color:var(--lvsc-accent,var(--accent-gold,#dbb970))!important}',
             '.lvsc-tab-panel{display:none}',
-            '.lvsc-tab-panel.lvsc-active{display:grid}',
+            '.lvsc-tab-panel.lvsc-active{display:grid;gap:10px}',
             '.lvsc-category-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;color:#dbb970;letter-spacing:0}',
             '.lvsc-category-title small{font-size:11px;font-weight:600;color:#9be7c3}',
             '.lvsc-field-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(156px,100%),1fr));gap:8px;align-items:end}',
             '.lvsc-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(238px,100%),1fr));gap:9px;align-items:start}',
-            '.lvsc-section{display:grid;align-content:start;gap:8px;min-width:0;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.035)}',
+            '.lvsc-section{display:flex;flex-direction:column;min-width:0;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(255,255,255,.035)}',
+            '.lvsc-section .lvsc-section-title-row{padding:9px 9px 0 9px}',
+            '.lvsc-section>*{margin-bottom:8px}.lvsc-section>*:last-child{margin-bottom:0}',            
             '.lvsc-section-title,.lvsc-section-title-row>span{font-weight:700;color:#dbb970}',
             '.lvsc-section-title-row{display:flex;align-items:center;gap:8px;min-width:0}',
             '.lvsc-section>.lvsc-section-title,.lvsc-section-title-row{cursor:pointer;user-select:none}',
             '.lvsc-section>.lvsc-section-title::before{content:"▼ ";font-size:10px}',
             '.lvsc-section-title-row>span::before{content:"▼ ";font-size:10px;color:#dbb970}',
             '.lvsc-section>.lvsc-section-title.lvsc-title-collapsed::before{content:"▶ "}',
-            '.lvsc-big-cat-title-row>span{font-size:14px!important;color:#f0d890!important}',
-            '.lvsc-big-cat-title-row{background:rgba(219,185,112,.06);border-radius:6px;padding:4px 8px;margin:0 -4px}',
+            '.lvsc-big-cat-title-row>span{font-size:14px!important;color:#f0d890!important;text-shadow:0 1px 3px rgba(0,0,0,.2)}',
+            '.lvsc-big-cat-title-row{background:transparent;border-radius:6px;padding:4px 8px;margin:0 -4px}',
             '.lvsc-section-title-row.lvsc-title-collapsed>span::before{content:"▶ "}',
-'body .lvsc-section-content-hidden{display:none!important}',
-'body .lvsc-search-hidden{display:none!important}',
-'.lvsc-big-cat-title-row.lvsc-title-collapsed~*{display:none!important}',
-            '.lvsc-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px}',
+            '.lvsc-section-title-row.lvsc-title-collapsed{margin-bottom:2px!important}',
+            '.lvsc-section>*{transition:max-height .3s ease,opacity .22s ease,margin .3s ease,padding .3s ease}',
+	        'body .lvsc-search-hidden{display:none!important}',
+	'.lvsc-section-content-hidden{max-height:0!important;min-height:0!important;opacity:0!important;overflow:hidden!important;margin-top:0!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important;line-height:0!important;font-size:0!important}',
+	'.lvsc-section-content-hidden *{margin-top:0!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important}',
+	'.lvsc-big-cat-title-row.lvsc-title-collapsed~*{max-height:0!important;min-height:0!important;opacity:0!important;overflow:hidden!important;margin-top:0!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important;line-height:0!important;font-size:0!important}',
+	'.lvsc-big-cat-title-row.lvsc-title-collapsed~* *{margin-top:0!important;margin-bottom:0!important;padding-top:0!important;padding-bottom:0!important}',            '.lvsc-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));gap:8px}',
             '.lvsc-span2{grid-column:1 / -1}',
             '.lvsc-help{font-size:11px;color:#cfc6b2;opacity:.82;line-height:1.45}',
             '.sort-list{display:grid;gap:3px;margin:4px 0}',
@@ -6870,13 +7862,12 @@ function stop(reason) {
             '.lvsc-fb-send{background:#dbb970;color:#17141d}',
             '#lvscActions{flex:0 0 auto;display:flex;gap:8px;padding:10px 12px 12px;background:linear-gradient(180deg,rgba(17,20,29,.9),rgba(17,20,29,.98));border-top:1px solid rgba(255,255,255,.08)}',
             '#lvscRunBtn{flex:1;height:34px;background:#dbb970;color:#17141d}',
-            '#lvscRefreshBtn{width:72px;height:34px;background:rgba(255,255,255,.08);color:#f5f1e8;border:1px solid rgba(255,255,255,.12)!important}',
             '#lvscMonitorBtn{height:34px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important}',
             '#lvscAutoTrialBtn,#lvscAutoTreasureBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
             '#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscSectRecoveryBtn,#lvscRepairBtn,#lvscRecruitBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn,#lvscNatalDevourBtn,#lvscWecomTestBtn,#lvscCaptureSpiritSet,#lvscCaptureCombatSet,#lvscReportBtn,#lvscUnmuteUpdateBtn,#lvscFarmStartBtn,#lvscStartTalismanBtn,#lvscSweepStartBtn{height:32px;background:rgba(155,231,195,.16);color:#9be7c3;border:1px solid rgba(155,231,195,.28)!important;border-radius:6px;cursor:pointer;font-weight:700}',
             '#lvscAutoInscriptionBtn{height:34px;background:rgba(216,180,254,.14);color:#d8b4fe;border:1px solid rgba(216,180,254,.28)!important}',
             '#lvscInscriptionStats{font-size:12px;color:#9be7c3}',
-            '#lvscInscriptionLog,#lvscRecruitLog{min-height:130px;max-height:190px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px}',
+            '#lvscPanel.lvsc-embedded #lvscStatus{color:var(--lvsc-text,var(--text-primary,#d8dde0))!important;background:var(--lvsc-card,var(--bg-card,#1e1e2e))!important;border-color:var(--lvsc-border,var(--border-color,rgba(255,255,255,.08)))!important}',
             '#lvscAutoRecoveryBtn{align-self:end}',
             '#lvscUpdateModal{position:fixed;inset:0;z-index:' + UPDATE_MODAL_Z_INDEX + ';color:#f5f1e8;font:13px/1.55 "Microsoft YaHei",sans-serif}',
             '.lvsc-update-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px)}',
@@ -6900,8 +7891,19 @@ function stop(reason) {
             '#lvscUpdateCloseBtn{width:100%;height:34px;background:#dbb970;color:#17141d}',
             '#lvscResizeHandle{position:absolute;right:3px;bottom:3px;z-index:5;width:18px;height:18px;cursor:nwse-resize;border-radius:3px;background:linear-gradient(135deg,transparent 0 45%,rgba(219,185,112,.75) 46% 52%,transparent 53% 62%,rgba(219,185,112,.65) 63% 69%,transparent 70%);opacity:.85}',
             '@container (max-width: 380px){.lvsc-grid2,.lvsc-field-grid,.lvsc-card-grid{grid-template-columns:1fr}#lvscTabs{grid-template-columns:repeat(4,minmax(0,1fr))}.lvsc-tab{font-size:11px}}',
-            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscTabs{top:-10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}'
+            '@media (max-width: 520px){#lvscPanel{right:8px;bottom:8px;width:min(340px,calc(100vw - 16px));height:min(620px,calc(100vh - 16px));max-width:calc(100vw - 16px);max-height:78vh;font-size:12px}#lvscBody{gap:8px;padding:10px}#lvscTabs{top:-10px}#lvscPanel input[type=number],#lvscPanel input[type=text],#lvscPanel select{height:34px}#lvscActions button,#lvscSelfFightBtn,#lvscAutoRecoveryBtn,#lvscVoidBodyBtn,#lvscHiddenCharmBtn,#lvscCheckUpdateBtn{height:38px}#lvscPanel.lvsc-collapsed{width:calc(100vw - 16px)!important;border-radius:12px}#lvscCompactStatus{max-width:none}}',
+            '#lvscPanel:not(.lvsc-embedded) select,#lvscPanel:not(.lvsc-embedded) select option{background:#1b2127!important;color:#d8dde0!important}',
+            '#lvscCraftQualityLog{color:#797979!important;background:transparent!important;border:1px solid rgba(255,255,255,.25)!important}',
+            '.lvsc-menu-btn::before{content:\"\"!important;display:inline-block!important;width:3px!important;height:18px!important;border-radius:2px!important;background:var(--lvsc-bar,rgb(22,128,106))!important;margin-right:6px!important;vertical-align:middle!important}',
+            '#lvscPowerSaveOverlay{position:fixed;inset:0;background:#000;z-index:2147483646;display:none;overflow:hidden;cursor:default}',
+            '#lvscPowerSaveOverlay.active{display:block}',
+            '#lvscPowerSaveOverlay .ps-info{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);color:#444;font-family:Consolas,monospace;font-size:20px;font-weight:700;user-select:none;pointer-events:none;text-align:center;line-height:1.6;white-space:nowrap}',
+            '#psStatusLine{font-size:15px;color:#888;margin-top:2px}',
+            '#lvscPowerSaveOverlay .ps-switch-area{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);pointer-events:auto}',
+            '#lvscPowerSaveOverlay .ps-switch-area label{color:#555;font-size:13px;cursor:pointer;user-select:none}',
+            '#lvscPowerSaveOverlay .ps-switch-area input{margin-right:4px;cursor:pointer}',
         ].join('');
+
         document.head.appendChild(style);
 
         var panel = document.createElement('div');
@@ -6910,7 +7912,7 @@ function stop(reason) {
         panel.innerHTML =
             '<header><span id="lvscTitle"><span id="lvscTitleText">神识清理</span></span><span id="lvscHeaderActions"><button id="lvscCollapseBtn" title="收起成横幅">收起</button><button id="lvscClose" title="隐藏">×</button></span></header>' +
             '<div id="lvscStatus" data-tone="idle">待命</div>' +
-            '<div id="lvscCompactBar"><span id="lvscCompactSpirit">读取中</span><span id="lvscCompactStatus" data-tone="idle">待命</span><button id="lvscCompactRunBtn">开始</button><button id="lvscCompactMonitorBtn">监测</button><button id="lvscCompactAutoRestartBtn" style="height:30px;min-width:36px;font-size:10px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.12)!important">自启</button><button id="lvscExpandBtn">展开</button></div>' +
+            '<div id=\"lvscCompactBar\"><span id=\"lvscCompactSpirit\">读取中</span><span id=\"lvscCompactStatus\" data-tone=\"idle\">待命</span><button id=\"lvscCompactRunBtn\">开始</button><button id=\"lvscCompactMonitorBtn\">监测</button><span id=\"lvscCompactQuickStatus\" style=\"display:none;color:#9be7c3;font-size:11px;white-space:nowrap\"></span><button id=\"lvscCompactQuickBtn\" style=\"display:none;height:30px;padding:0 8px;font-size:11px;background:linear-gradient(135deg,#6bc9a0,#4a8);color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700\">快清</button><button id=\"lvscCompactAutoRestartBtn\" style=\"height:30px;min-width:36px;font-size:10px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.12)!important\">自启</button><button id=\"lvscExpandBtn\">展开</button></div>' +
             '<div id="lvscBody">' +
             '<div class="lvsc-meter"><div id="lvscSpiritValue">读取中...</div><div id="lvscSpiritTrack"><div id="lvscSpiritFill"></div></div></div>' +
             '<div id="lvscTabs">' +
@@ -6940,6 +7942,8 @@ function stop(reason) {
 '</div>' +
 '<label class=\"lvsc-check\"><input id=\"lvscCheckDaoyunBoost\" type=\"checkbox\">启动前检查道韵加成</label>' +
 '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAggressiveMode\" type=\"checkbox\">⚔ 激进模式（遇怪直接打，不找护道，更快但更险）</label>' +
+            '<div class=\"lvsc-section-title-row\" style=\"font-size:12px;color:#dbb970;margin-top:8px\"><span>快速清理</span></div>' +
+            '<div class=\"lvsc-section-content-hidden\"><div style=\"display:flex;align-items:center;gap:4px;margin-bottom:6px\"><input id=\"lvscQuickClearTargetPct\" type=\"number\" min=\"1\" max=\"100\" style=\"width:52px;height:26px;padding:0 4px;font-size:11px;background:transparent;color:#ccc;border:1px solid #bbb;border-radius:4px;text-align:center\">% <button id=\"lvscQuickClearBtn\" style=\"height:28px;padding:0 12px;background:linear-gradient(135deg,#6bc9a0,#4a8);color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700;font-size:11px\">启动</button></div><div class=\"lvsc-help\">神识耗尽时冥想到上方设定%，收功后只在夜晚打怪（50→20→10→5倍降序），一夜未耗尽则等下夜继续，白天自动等待。</div><label class=\"lvsc-check\" style=\"font-size:11px;margin-top:4px\"><input id=\"lvscQuickClearShowCompact\" type=\"checkbox\"> 显示在底栏</label></div>' +
 '<div class=\"lvsc-section-title-row\"><span>模式</span></div>' +
 '<div style=\"font-size:11px;margin-top:4px;display:flex;gap:8px;white-space:nowrap\"><label><input id=\"lvscExploreModeApi\" type=\"radio\" name=\"lvscExploreMode\" value=\"api\"> 脚本API(推荐)</label><label><input id=\"lvscExploreModeSystem\" type=\"radio\" name=\"lvscExploreMode\" value=\"system\"> 系统自带</label></div>' +
 '</div>' +
@@ -6947,7 +7951,7 @@ function stop(reason) {
             '<div class="lvsc-section"><div class="lvsc-section-title-row lvsc-big-cat-title-row"><span>遭遇</span></div>' +
             '<div class="lvsc-section-title-row" style="font-size:12px;color:#dbb970;margin-top:4px"><span>妖兽</span></div>' +
             '<div class="lvsc-grid2">' +
-            '<label>战力倍率<input id="lvscSelfFightMargin" type="number" min="1" max="3" step="0.05"></label>' +
+            '<label>战力倍率<input id=\"lvscSelfFightMargin\" type=\"number\" min=\"0.05\" max=\"10\" step=\"0.05\"></label>' +
             '<button id="lvscSelfFightBtn">检查并自战</button>' +
             '</div>' +
             '<label class="lvsc-check"><input id="lvscAutoSelfFightWeak" type="checkbox">弱怪自战</label>' +
@@ -7037,7 +8041,7 @@ function stop(reason) {
             '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="auto">' +
             // ⑴炼制（批量炼制/涅槃/虚空淬体丹/隐匿符/批量用符 → 动态注入）
             '<div class="lvsc-section"><div class="lvsc-section-title-row lvsc-big-cat-title-row"><span>炼制</span></div>' +
-            '<div class="lvsc-card-grid"><div class="lvsc-section"><div class="lvsc-section-title-row"><span>批量炼制</span></div><div class="lvsc-field-grid"><label>炼制类型<select id="lvscCraftType"><option value="alchemy">炼丹</option><option value="forge">炼器</option><option value="talisman">制符</option></select></label><label>配方<select id="lvscCraftRecipe"><option value="">点击刷新</option></select></label><label>目标数量<input id="lvscCraftTargetCount" type="number" min="1" value="10"></label><label>每次炼制<input id="lvscCraftBatchSize" type="number" min="0" value="0" placeholder="0=全部"></label><label>目标品质<select id="lvscCraftQualityTarget"><option value="0">任意</option><option value="1">普通+</option><option value="2">优良+</option><option value="3">稀有+</option><option value="4">史诗+</option><option value="5">传说</option></select></label><label>品质达标<input id="lvscCraftQualityCount" type="number" min="0" value="0">个</label><label class="lvsc-check"><input id="lvscCraftAutoBuyMats" type="checkbox">自动买材料</label><label class="lvsc-check"><input id="lvscCraftAutoTimer" type="checkbox">定时炼制</label><label>间隔(分钟)<input id="lvscCraftTimerMin" type="number" min="1" value="10"></label><label>炼制模式<select id="lvscCraftTimerMode"><option value="normal">普通炼制</option><option value="quality">品质炼制</option></select></label><span id="lvscCraftTimerCountdown" style="font-size:11px;color:#dbb970;margin-left:4px;white-space:nowrap"></span></div><div style="display:flex;gap:6px"><button id="lvscRefreshRecipes" style="height:32px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1">刷新配方</button><button id="lvscAutoCraftBtn" style="height:32px;background:linear-gradient(135deg,#dbb970,#c9a050);color:#17141d;border:0!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1">开始炼制</button><button id="lvscQualityCraftBtn" style="height:34px;background:#c08060;color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;flex:1">品质炼制</button><button id="lvscStopCraftBtn" style="height:32px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28)!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1;display:none">停止</button></div><div id="lvscCraftQualityLog" style="min-height:60px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px">待命</div></div></div>' +
+            '<div class="lvsc-card-grid"><div class="lvsc-section"><div class="lvsc-section-title-row"><span>批量炼制</span></div><div class="lvsc-field-grid"><label>炼制类型<select id="lvscCraftType"><option value="alchemy">炼丹</option><option value="forge">炼器</option><option value="talisman">制符</option></select></label><label>配方<select id="lvscCraftRecipe"><option value="">点击刷新</option></select></label><label>目标数量<input id="lvscCraftTargetCount" type="number" min="1" value="10"></label><label>每次炼制<input id="lvscCraftBatchSize" type="number" min="0" value="0" placeholder="0=全部"></label><label>目标品质<select id="lvscCraftQualityTarget"><option value="0">任意</option><option value="1">普通+</option><option value="2">优良+</option><option value="3">稀有+</option><option value="4">史诗+</option><option value="5">传说</option></select></label><label>品质达标<input id="lvscCraftQualityCount" type="number" min="0" value="0">个</label><label class="lvsc-check"><input id="lvscCraftAutoBuyMats" type="checkbox">自动买材料</label><label class="lvsc-check"><input id="lvscCraftAutoTimer" type="checkbox">定时炼制</label><label>间隔(分钟)<input id=\"lvscCraftTimerMin\" type=\"number\" min=\"1\" value=\"10\"></label><div style=\"display:flex;align-items:center;gap:4px;color:#cfc6b2;font-size:12px\"><span style=\"white-space:nowrap\">每批间隔(秒)</span><input id=\"lvscCraftDelayMin\" type=\"number\" min=\"0.5\" step=\"0.5\" value=\"5\" style=\"width:50px;flex:none\">~<input id=\"lvscCraftDelayMax\" type=\"number\" min=\"0.5\" step=\"0.5\" value=\"10\" style=\"width:50px;flex:none\"></div><label>炼制模式<select id=\"lvscCraftTimerMode\"><option value="normal">普通炼制</option><option value="quality">品质炼制</option></select></label><span id="lvscCraftTimerCountdown" style="font-size:11px;color:#dbb970;margin-left:4px;white-space:nowrap"></span></div><div style="display:flex;gap:6px"><button id="lvscRefreshRecipes" style="height:32px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1">刷新配方</button><button id="lvscAutoCraftBtn" style="height:32px;background:linear-gradient(135deg,#dbb970,#c9a050);color:#17141d;border:0!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1">开始炼制</button><button id="lvscQualityCraftBtn" style="height:34px;background:#c08060;color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;flex:1">品质炼制</button><button id="lvscStopCraftBtn" style="height:32px;background:rgba(255,107,107,.16);color:#ff6b6b;border:1px solid rgba(255,107,107,.28)!important;border-radius:6px;cursor:pointer;font-weight:700;flex:1;display:none">停止</button></div><div id="lvscCraftQualityLog" style="min-height:60px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px">待命</div></div></div>' +
             '<div class="lvsc-section"><div class="lvsc-section-title-row"><span>虚空淬体</span></div>' +
             '<label class="lvsc-check"><input id="lvscAutoVoidBody" type="checkbox">探索前自动补加成</label>' +
             '<div class="lvsc-grid2">' +
@@ -7113,11 +8117,12 @@ function stop(reason) {
             '</div>' +
             '<div id=\"lvscGiftStonesDiscipleList\" style=\"margin:0 0 2px 22px;display:none;flex-wrap:wrap;gap:4px;max-height:100px;overflow-y:auto;padding:4px;background:rgba(0,0,0,.15);border-radius:6px\"></div>' +
             '<div class=\"lvsc-help\">自动处理徒弟的问答解惑、护道突破、历练请求。授业每天自动一次。勾选冥想中断护道后：自动收功→接护道→恢复冥想。赠物/赠灵石每天各自动一次，勾选后生效。</div>' +
-            '<div style=\"margin:2px 0;display:flex;gap:6px;align-items:center\"><span style=\"color:#ff6b6b;cursor:pointer;font-size:10px\" id=\"lvscClearGiftToday\">清空今日记录（重置赠物/赠灵石/授业）</span></div>' +
-            '<div id=\"lvscMasterLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:var(--text-muted);background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
+            '<div style=\"margin:2px 0;display:flex;gap:6px;align-items:center\"><span style=\"color:#ff6b6b;cursor:pointer;font-size:10px\" id=\"lvscClearGiftToday\">清空今日记录（重置赠物/赠灵石/授业）</span><span style=\"color:#ff6b6b;cursor:pointer;font-size:10px;margin-left:12px\" id=\"lvscClearMasterLog\">清空所有日志</span></div>' +
+            '<div id=\"lvscMasterLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
             '</div>' +
             // ⑸监控（自动出售/洗练石升品/气运/出狱/灵田）
             '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row lvsc-big-cat-title-row\"><span>监控</span></div>' +
+            '<div id=\"lvscBigCatMonitor\" style=\"display:block\">' +
             // ①自动出售
             '<div class=\"lvsc-section-title-row\"><span>自动出售＆分解</span></div>' +
             '<div class=\"lvsc-card-grid\" id=\"lvscMonitorSell\"></div>' +
@@ -7133,12 +8138,17 @@ function stop(reason) {
             // ④自动出狱
             '<div class=\"lvsc-section-title-row\"><span>自动解除禁闭</span></div>' +
             '<label class=\"lvsc-check\"><input id=\"lvscAutoBail\" type=\"checkbox\">自动混天典狱保释</label>' +
-            '<label>保释方式<select id=\"lvscBailMethod\"><option value=\"stone\">灵石</option><option value=\"ad\">仙缘</option></select></label>' +
+            '<label>保释方式<select id=\"lvscBailMethod\"><option value=\"stone\">灵石</option><option value=\"ad\">材料</option></select></label>' +
             '<label class=\"lvsc-check\"><input id=\"lvscAutoBailClick\" type=\"checkbox\">自动禁闭解除（点击天道禁闭解除按钮）</label>' +
             '<label class=\"lvsc-check\"><input id=\"lvscAutoVerify\" type=\"checkbox\">自动过验证（算术题自动答题）</label>' +
             // ⑤自动灵田
             '<div class=\"lvsc-section-title-row\"><span>自动灵田</span></div>' +
             '<div class=\"lvsc-card-grid\" id=\"lvscMonitorFarm\"></div>' +
+            '<div class=\"lvsc-section-title-row\"><span>自动抢红包</span></div>' +
+            '<label class=\"lvsc-check\"><input id=\"lvscRedPacketEnabled\" type=\"checkbox\">启用自动抢红包</label>' +
+            '<div id=\"lvscRedPacketStats\" style=\"font-size:11px;color:#dbb970;margin-top:4px\">今日：0次 / 0灵石<br>昨日：0次 / 0灵石<br>近7天：0次 / 0灵石<br>累计：0次 / 0灵石</div>' +
+            '<div id=\"lvscRedPacketLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待红包...</div>' +
+            '</div>' +
             '</div>' +
             // ⑹其他（自动登录/月卡仙缘/收徒/藏宝图/珍宝阁 → 部分动态注入）
             '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row lvsc-big-cat-title-row\"><span>其他</span></div>' +
@@ -7166,7 +8176,7 @@ function stop(reason) {
             '<button id=\"lvscStopPavilionBtn\" class=\"lvsc-stop-btn\" style=\"flex:1;height:32px;display:none\">停止</button>' +
             '<button id=\"lvscRefreshPavilion\" class=\"lvsc-rfr-btn\">刷新</button>' +
             '</div>' +
-            '<div id=\"lvscPavilionLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
+            '<div id=\"lvscPavilionLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
             '</div>' +
             '<div class=\"lvsc-section-title-row\"><span>试练塔扫荡</span></div>' +
             '<div class=\"lvsc-card-grid\" id=\"lvscMonitorSweep\">' +
@@ -7178,13 +8188,14 @@ function stop(reason) {
             '<button id=\"lvscSweepStartBtn\" class=\"lvsc-action-btn\" style=\"flex:1;height:32px\">开始扫荡</button>' +
             '<button id=\"lvscSweepStopBtn\" class=\"lvsc-stop-btn\" style=\"flex:1;height:32px;display:none\">停止</button>' +
             '</div>' +
-            '<div id=\"lvscSweepLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
+            '<div id=\"lvscSweepLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>'
+ +
             '</div>' +
             '<div class=\"lvsc-section-title-row\"><span>自动登录</span></div>' +
             '<div class=\"lvsc-grid2\">' +
-            '<label>道籍邮箱<input id=\"lvscAutoLoginEmail\" type=\"text\" placeholder=\"输入道籍邮箱\" value=\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginEmail') || '') + '\"></label>' +
-            '<label>登录密码<input id=\"lvscAutoLoginPassword\" type=\"password\" placeholder=\"输入登录密码\" value=\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginPassword') || '') + '\"></label>' +
-            '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAutoLoginEnabled\" type=\"checkbox\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1' ? ' checked' : '') + '>启用自动登录</label>' +
+            '<label>道籍邮箱<input id=\"lvscAutoLoginEmail\" type=\"text\" placeholder=\"输入道籍邮箱\" value=\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginEmail') || '') + '\" oninput=\"localStorage.setItem(\'lvSpiritCleaner.autoLoginEmail\',this.value)\"></label>' +
+            '<label>登录密码<input id=\"lvscAutoLoginPassword\" type=\"password\" placeholder=\"输入登录密码\" value=\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginPassword') || '') + '\" oninput=\"localStorage.setItem(\'lvSpiritCleaner.autoLoginPassword\',this.value)\"></label>' +
+            '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAutoLoginEnabled\" type=\"checkbox\"' + (localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1' ? ' checked' : '') + ' onchange=\"localStorage.setItem(\'lvSpiritCleaner.autoLoginEnabled\',this.checked?\'1\':\'0\')\">启用自动登录</label>' +
             '</div>' +
             '<div style=\"font-size:10px;color:#8f846f;margin-top:4px\">密码仅保存在浏览器本地，不会上传到任何服务器。</div>' +
             '<div class=\"lvsc-section-title-row\" style=\"margin-top:6px\"><span>自动秘匣</span></div>' +
@@ -7194,11 +8205,24 @@ function stop(reason) {
             '<button id=\"lvscMysteryBoxStopBtn\" class=\"lvsc-stop-btn\" style=\"height:32px;display:none\">停止</button>' +
             '<span id=\"lvscMysteryBoxStatus\" style=\"font-size:11px;color:#dbb970;margin-left:4px\"></span>' +
             '</div>' +
-            '<div id=\"lvscMysteryBoxLog\" style=\"min-height:40px;max-height:160px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace\">等待执行...</div>' +
+            '<div id=\"lvscMysteryBoxLog\" style=\"min-height:40px;max-height:160px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace\">待命</div>' +
+            '<div class=\"lvsc-section-title-row\"><span>竞技场模拟</span></div>' +
+            '<div class=\"lvsc-card-grid\">' +
+            '<label>对手<select id=\"lvscArenaOpponent\"><option value=\"\">点击刷新</option></select></label>' +
+            '<label>模拟次数<input id=\"lvscArenaSimCount\" type=\"number\" min=\"1\" max=\"9999\" value=\"100\"></label>' +
+            '<label>间隔(秒)<input id=\"lvscArenaSimInterval\" type=\"number\" min=\"0\" max=\"60\" value=\"5\" step=\"0.5\" style=\"width:80px\"></label>' +
+            '</div>' +
+            '<div style=\"display:flex;gap:6px\">' +
+            '<button id=\"lvscArenaRefreshBtn\" style=\"flex:1;height:32px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;cursor:pointer;font-weight:700\">刷新对手</button>' +
+            '<button id=\"lvscArenaStartBtn\" class=\"lvsc-action-btn\" style=\"flex:1;height:34px\">开始模拟</button>' +
+            '<button id=\"lvscArenaStopBtn\" class=\"lvsc-stop-btn\" style=\"flex:1;height:32px;display:none\">停止</button>' +
+            '</div>' +
+            '<div id=\"lvscArenaStats\" style=\"font-size:11px;color:#dbb970;margin-top:4px\">总场次：0 | 胜场：0 | 胜率：0%</div>' +
+            '<div id=\"lvscArenaLog\" style=\"min-height:30px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace;margin-top:4px\">等待执行...</div>' +
             '</div>' +
             '</div>' +
-            // ===== 其他 tab =====
-            '<div class=\"lvsc-category lvsc-tab-panel\" data-tab-panel=\"other\">' +
+            // ===== 其他 tab ====
+            '<div class="lvsc-category lvsc-tab-panel" data-tab-panel="other">' +
             '<div class="lvsc-section"><div class="lvsc-section-title-row lvsc-big-cat-title-row"><span>更新</span></div>' +
             '<div class="lvsc-category-title">更新公告<small>v' + SCRIPT_VERSION + '</small></div>' +
             '<div class="lvsc-field-grid">' +
@@ -7245,24 +8269,156 @@ function stop(reason) {
             '<div style="display:flex;gap:6px;margin-top:6px">' +
             '<button id="lvscExportConfigBtn" style="flex:1;height:32px;background:rgba(219,185,112,.16);color:#dbb970;border:1px solid rgba(219,185,112,.3);border-radius:6px;cursor:pointer;font-weight:700;">导出配置</button>' +
             '<button id="lvscImportConfigBtn" style="flex:1;height:32px;background:rgba(107,201,160,.16);color:#6bc9a0;border:1px solid rgba(107,201,160,.3);border-radius:6px;cursor:pointer;font-weight:700;">导入配置</button>' +
+            '</div>' +
+            '<div style="display:flex;gap:4px;margin-top:6px">' +
+            '<button id="lvscSaveSlotA" style="flex:1;height:26px;background:rgba(219,185,112,.12);color:#dbb970;border:1px solid rgba(219,185,112,.22);border-radius:4px;cursor:pointer;font-size:11px">保存到A</button>' +
+            '<button id="lvscLoadSlotA" style="flex:1;height:26px;background:rgba(107,201,160,.12);color:#6bc9a0;border:1px solid rgba(107,201,160,.22);border-radius:4px;cursor:pointer;font-size:11px">读取A</button>' +
+            '<button id="lvscSaveSlotB" style="flex:1;height:26px;background:rgba(219,185,112,.12);color:#dbb970;border:1px solid rgba(219,185,112,.22);border-radius:4px;cursor:pointer;font-size:11px">保存到B</button>' +
+            '<button id="lvscLoadSlotB" style="flex:1;height:26px;background:rgba(107,201,160,.12);color:#6bc9a0;border:1px solid rgba(107,201,160,.22);border-radius:4px;cursor:pointer;font-size:11px">读取B</button>' +
+            '</div>' +
+            '<div style="display:flex;gap:4px;margin-top:6px">' +
+            '<button id="lvscDefaultConfigBtn" style="flex:1;height:26px;background:rgba(200,128,224,.12);color:#c080e0;border:1px solid rgba(200,128,224,.22);border-radius:4px;cursor:pointer;font-size:11px">使用默认配置</button>' +
             '</div></div>' +
             '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row lvsc-big-cat-title-row\"><span>安全</span></div>' +
+
+
             '<label class=\"lvsc-check\"><input id=\"lvscSafeMode\" type=\"checkbox\">安全模式（禁用所有自动功能）</label>' +
             '<div class=\"lvsc-help\" style=\"margin-top:4px\">开启后所有自动操作立即停止，手动操作不受影响。可用于排查问题或临时暂停脚本。</div>' +
             '</div>' +
             '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row lvsc-big-cat-title-row\"><span>主题</span></div>' +
-            '<div style="color:var(--text-muted);font-size:12px;padding:8px 0">① 待开发</div>' +
+            '<div style=\"padding:8px 0;display:flex;gap:16px;font-size:12px\">' +
+            '<label class=\"lvsc-check\" style=\"display:flex!important;align-items:center;gap:4px;cursor:pointer\"><input id=\"lvscThemeFloat\" type=\"radio\" name=\"lvscThemeMode\" value=\"float\"> 悬浮窗</label>' +
+            '<label class=\"lvsc-check\" style=\"display:flex!important;align-items:center;gap:4px;cursor:pointer\"><input id=\"lvscThemeEmbed\" type=\"radio\" name=\"lvscThemeMode\" value=\"embed\"> 内嵌</label>' +
+            '</div>' +
+            '<div class=\"lvsc-help\" style=\"margin-top:4px\">内嵌模式关闭后可点击左上角「灵界」或右上角「更多」重新打开面板</div>' +
+            '</div>' +
+            '<div class=\"lvsc-section\"><div class=\"lvsc-section-title-row lvsc-big-cat-title-row\"><span>模式</span></div>' +
+            '<label class=\"lvsc-check\"><input id=\"lvscPowerSave\" type=\"checkbox\">开启省电模式</label>' +
+            '<div class=\"lvsc-help\" style=\"margin-top:4px\">开启后页面全黑，减少渲染负担，适合挂机。取消勾选即可关闭。</div>' +
+            '<label class=\"lvsc-check\" style=\"margin-top:8px\"><input id=\"lvscPipMode\" type=\"checkbox\">开启画中画</label>' +
+            '<div class=\"lvsc-help\" style=\"margin-top:4px\">将运行状态等显示在独立悬浮小窗，可拖到浏览器外（移动端受浏览器限制）</div>' +
+            '<label class=\"lvsc-check\" style=\"margin-top:8px\"><input id=\"lvscNotifyMode\" type=\"checkbox\">开启通知</label>' +
+            '<div class=\"lvsc-help\" style=\"margin-top:4px\">将将运行状态等推送至通知栏（移动端受浏览器限制）</div>' +
             '</div>' +
             '</div>' +
             '<div id="lvscAuthor"><span>by：SuH2RanZ1＆青喵   Q群：901064639</span><button id="lvscFeedbackBtn">&#x1F4AC; 反馈</button></div>' +
             '</div>' + '</div>' +
-            '<div id="lvscActions" style="flex-wrap:wrap"><button id="lvscRunBtn">开始清理</button><button id="lvscMonitorBtn">监测神识</button><button id="lvscRefreshBtn">刷新</button><label class="lvsc-check" style="font-size:11px;white-space:nowrap"><input id="lvscAutoRestart" type="checkbox">异常自启</label></div>' +
+			'<div id="lvscActions" style="flex-wrap:wrap"><button id="lvscRunBtn">开始清理</button><button id="lvscMonitorBtn">监测神识</button><span id="lvscActionsQuickStatus" style="display:none;color:#9be7c3;font-size:11px;white-space:nowrap"></span><button id="lvscActionsQuickBtn" style="display:none;height:30px;padding:0 10px;font-size:11px;background:linear-gradient(135deg,#6bc9a0,#4a8);color:#17141d;border:0;border-radius:6px;cursor:pointer;font-weight:700;margin-right:4px">快速清理</button><label class="lvsc-check" style="font-size:11px;white-space:nowrap"><input id="lvscAutoRestart" type="checkbox">异常自启</label></div>' +
             '<div id="lvscResizeHandle" title="拖拽调节面板大小"></div>';
-document.body.appendChild(panel);
-panel.style.display = 'flex';
-panel.style.visibility = 'visible';
-panel.style.opacity = '1';
-panel.style.zIndex = String(PANEL_Z_INDEX);
+	document.body.appendChild(panel);
+		var psOverlay = document.createElement('div');
+		psOverlay.id = 'lvscPowerSaveOverlay';
+					psOverlay.innerHTML = '<div class=\"ps-info\" id=\"psInfo\"><div id=\"psSpiritLine\">读取中...</div><div id=\"psRealmLine\"></div><div id=\"psStatusLine\"></div></div><div class=\"ps-switch-area\"><label style=\"margin-right:16px\"><input type=\"checkbox\" id=\"lvscPowerSaveOverlayCb\" checked> 省电模式</label><label><input type=\"checkbox\" id=\"lvscPowerSaveFullscreen\" checked> 全屏</label></div>';
+
+		document.body.appendChild(psOverlay);
+		panel.style.display = 'flex';
+	panel.style.zIndex = String(PANEL_Z_INDEX);
+	requestAnimationFrame(function(){requestAnimationFrame(function(){panel.classList.add('lvsc-show');});});
+        // === 主题模式切换 ===
+         // 监听游戏主题切换，动态采样颜色
+        function syncThemeColors() {
+            var p = document.getElementById('lvscPanel');
+            if (!p || !p.classList.contains('lvsc-embedded')) return;
+            var body = document.body;
+            var cs = getComputedStyle(body);
+            var gb = document.querySelector('.game-body');
+            var gbCs = gb ? getComputedStyle(gb) : cs;
+            var htmlCs = getComputedStyle(document.documentElement);
+            // 从游戏元素采样
+            p.style.setProperty('--lvsc-bg', htmlCs.getPropertyValue('--bg-body') || htmlCs.getPropertyValue('--bg-panel') || cs.backgroundColor || '#f6f6f2');
+            p.style.setProperty('--lvsc-text', htmlCs.getPropertyValue('--text-primary') || htmlCs.getPropertyValue('--text-color') || cs.color || '#333');
+            p.style.setProperty('--lvsc-border', htmlCs.getPropertyValue('--border-color') || gbCs.borderLeftColor || gbCs.borderColor || '#d5d0c8');
+            var isDark = document.documentElement.classList.contains('theme-dark');
+            p.style.setProperty('--lvsc-card', htmlCs.getPropertyValue('--bg-card') || (isDark ? '#1b2127' : '#f6f6f2'));
+            p.style.setProperty('--lvsc-header', htmlCs.getPropertyValue('--bg-panel') || htmlCs.getPropertyValue('--bg-card') || (isDark ? '#12161a' : '#ede8df'));
+            var bodyFw = getComputedStyle(document.body).fontWeight || '400';
+            p.style.fontWeight = bodyFw;
+        }
+        var _fwObserver;
+        function startFwObserver() {
+            if (_fwObserver) return;
+            _fwObserver = new MutationObserver(function() {
+                var p = document.getElementById('lvscPanel');
+                if (!p || !p.classList.contains('lvsc-embedded')) return;
+                p.style.fontWeight = getComputedStyle(document.body).fontWeight || '400';
+            });
+            _fwObserver.observe(document.body, {attributes: true, attributeFilter: ['class','style']});
+            _fwObserver.observe(document.documentElement, {attributes: true, attributeFilter: ['class','style']});
+        }
+        startFwObserver();
+        var themeObserver = new MutationObserver(function () { syncThemeColors(); });
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        setTimeout(function () { syncThemeColors(); }, 300);
+                // 监听游戏主题切换
+        var themeObserver = new MutationObserver(function () {
+            var p = document.getElementById('lvscPanel');
+            if (!p) return;
+            if (document.documentElement.classList.contains('theme-dark')) {
+                p.classList.add('lvsc-dark');
+            } else {
+                p.classList.remove('lvsc-dark');
+            }
+        });
+        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        // 初始化时执行一次
+        if (document.documentElement.classList.contains('theme-dark')) {
+            setTimeout(function () {
+                var p = document.getElementById('lvscPanel');
+                if (p) p.classList.add('lvsc-dark');
+            }, 200);
+        }
+        var savedThemeMode = localStorage.getItem('lvSpiritCleaner.themeMode') || 'float';
+        function applyThemeMode(mode) {
+            var p = document.getElementById('lvscPanel');
+            if (!p) return;
+            var isMobile = window.innerWidth <= 768;
+            var gameBody = document.querySelector('.game-body');
+            if (mode === 'embed') {
+                p.classList.add('lvsc-embedded');
+                p.classList.remove('lvsc-collapsed');
+                p.classList.remove('lvsc-mobile-hidden');
+                p.style.display = 'flex';
+                if (isMobile) {
+                    document.body.appendChild(p);
+                } else if (gameBody) {
+                    gameBody.appendChild(p);
+                } else {
+                    document.body.appendChild(p);
+                }
+                var savedW = localStorage.getItem('lvSpiritCleaner.embeddedWidth');
+                if (savedW) { var w = parseInt(savedW, 10) || 420; p.style.flex = '0 0 ' + w + 'px'; p.style.width = w + 'px'; }
+            } else {
+                p.classList.remove('lvsc-embedded');
+                p.style.display = 'flex';
+                document.body.appendChild(p);
+            }
+            localStorage.setItem('lvSpiritCleaner.themeMode', mode);
+        }
+        // 初始化应用
+        setTimeout(function () { applyThemeMode(savedThemeMode); }, 100);
+        // 绑定radio事件
+        var floatRadio = document.getElementById('lvscThemeFloat');
+        var embedRadio = document.getElementById('lvscThemeEmbed');
+        if (floatRadio && embedRadio) {
+            floatRadio.checked = (savedThemeMode === 'float');
+            embedRadio.checked = (savedThemeMode === 'embed');
+            floatRadio.onchange = function () { if (this.checked) applyThemeMode('float'); };
+            embedRadio.onchange = function () { if (this.checked) applyThemeMode('embed'); };
+        }
+                // 窗口缩放时自动适配手机/桌面（仅内嵌模式）
+        window.addEventListener('resize', function () {
+            var m = localStorage.getItem('lvSpiritCleaner.themeMode') || 'float';
+            if (m !== 'embed') return;
+            var p = document.getElementById('lvscPanel');
+            if (!p || p.style.display === 'none') return;
+            var isMob = window.innerWidth <= 768;
+            if (isMob && p.parentElement !== document.body) {
+                document.body.appendChild(p);
+            } else if (!isMob) {
+                var gb = document.querySelector('.game-body');
+                if (gb && p.parentElement !== gb) gb.appendChild(p);
+            }
+        });
         restorePanelSize(panel);
         makePanelDraggable(panel);
         makePanelResizable(panel);
@@ -7311,6 +8467,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         document.getElementById('lvscCheckDaoyunBoost').checked = state.checkDaoyunBoost;
         document.getElementById('lvscUseAdvancedMeditate').checked = state.useAdvancedMeditate;
         document.getElementById('lvscSummerOnlyAdvancedMeditate').checked = state.summerOnlyAdvMeditate;
+        document.getElementById('lvscQuickClearTargetPct').value = String(state.quickClearTargetPct);
         document.getElementById('lvscAutoReloadMin').value = String(state.autoReloadMin);
         document.getElementById('lvscAggressiveMode').checked = state.aggressiveMode;
         var emApi = document.getElementById('lvscExploreModeApi');
@@ -7403,6 +8560,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         document.getElementById('lvscHiddenCharmRarity').value = String(state.hiddenCharmRarity);
         document.getElementById('lvscHiddenCharmBuyQty').value = String(state.hiddenCharmBuyQty);
         document.getElementById('lvscHiddenCharmRetryMs').value = String(state.hiddenCharmRetryMs);
+        document.getElementById('lvscRedPacketEnabled').checked = state.redPacketEnabled;
                 // === 异常自启 ===
         document.getElementById('lvscAutoRestart').checked = state.autoRestart;
         document.getElementById('lvscAutoRestart').onchange = function() {
@@ -7434,7 +8592,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         // === 看门狗：每10秒检查，脚本异常停止时自动重启 ===
         window._lvscWatchdogTimer = setInterval(function() {
             if (!state.autoRestart) return;
-            if (running || monitoringSpirit) return;
+            if (running || monitoringSpirit || quickClearRunning) return;
             // 手动停止标记，不清除的话不自动重启
             if (window._lvscManualStop) { window._lvscManualStop = false; return; }
             // 检查是否有其他正在运行的任务
@@ -7449,6 +8607,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
 
         document.getElementById('lvscRunBtn').onclick = function () {
             if (running) { window._lvscManualStop = true; stop('手动停止'); return; }
+            if (quickClearRunning) { setStatus('快速清理运行中，无法启动清理', 'warn'); return; }
             if (state.exploreMode === 'system') { systemExploreLoop(); return; }
             runLoop();
         };
@@ -7464,6 +8623,18 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             _origStop(reason);
         };
         document.getElementById('lvscMonitorBtn').onclick = toggleSpiritMonitor;
+        var rpCb = document.getElementById('lvscRedPacketEnabled');
+        if (rpCb) {
+            rpCb.checked = state.redPacketEnabled;
+            rpCb.onchange = function() {
+                state.redPacketEnabled = this.checked;
+                localStorage.setItem('lvSpiritCleaner.redPacketEnabled', state.redPacketEnabled ? '1' : '0');
+                if (state.redPacketEnabled && !state.redPacketRunning) startRedPacketMonitor();
+                if (!state.redPacketEnabled && state.redPacketRunning) stopRedPacketMonitor();
+            };
+            if (state.redPacketEnabled) setTimeout(startRedPacketMonitor, 3000);
+            updateRedPacketStats();
+        }
         document.getElementById('lvscFeedbackBtn').onclick = function () {
             var old = document.getElementById('lvscFeedbackModal');
             if (old) { old.style.display = old.style.display === 'none' ? 'flex' : 'none'; return; }
@@ -7494,11 +8665,315 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             };
         };
         document.getElementById('lvscCompactMonitorBtn').onclick = toggleSpiritMonitor;
-        document.getElementById('lvscRefreshBtn').onclick = refreshPlayer;
+        document.getElementById('lvscStatus').onclick = showStatusLog;
         var atb = document.getElementById('lvscAutoTrialBtn'); if (atb) atb.onclick = toggleAutoTrial;
         var atrb = document.getElementById('lvscAutoTreasureBtn'); if (atrb) atrb.onclick = toggleAutoTreasure;
         var mbStart = document.getElementById('lvscMysteryBoxStartBtn'); if (mbStart) mbStart.onclick = toggleAutoMysteryBox;
         var mbStop = document.getElementById('lvscMysteryBoxStopBtn'); if (mbStop) mbStop.onclick = toggleAutoMysteryBox;
+        var arenaRefreshBtn = document.getElementById('lvscArenaRefreshBtn'); if (arenaRefreshBtn) arenaRefreshBtn.onclick = loadArenaOpponents;
+        var arenaStartBtn = document.getElementById('lvscArenaStartBtn'); if (arenaStartBtn) arenaStartBtn.onclick = startArenaSimulation;
+        var arenaStopBtn = document.getElementById('lvscArenaStopBtn'); if (arenaStopBtn) arenaStopBtn.onclick = stopArenaSimulation;
+        // ---- 省电模式 ----
+        var _powerSaveTimer = null;
+        function updatePowerSaveInfo() {
+            var sl = document.getElementById('psSpiritLine');
+            var rl = document.getElementById('psRealmLine');
+            var st = document.getElementById('psStatusLine');
+            var info = getSpiritInfo();
+            if (sl && info) {
+                var effMult = 1;
+                if (state.keepCurrentMultiplier) {
+                    var gSel = document.getElementById('exploreMultiplier');
+                    if (gSel && gSel.value) effMult = Number(gSel.value) || 1;
+                } else {
+                    effMult = Number(state.preferMultiplier) || 1;
+                }
+                sl.textContent = info.spirit + ' / ' + info.maxSpirit + '  每次-' + (info.cost * effMult);
+            }
+            if (rl) rl.textContent = getPlayerRealmStr();
+            if (st) {
+                var statusEl = document.getElementById('lvscStatus');
+                st.textContent = statusEl ? statusEl.textContent : '';
+            }
+        }
+        function enablePowerSave() {
+            isPowerSave = true;
+            var ov = document.getElementById('lvscPowerSaveOverlay');
+            if (ov) ov.classList.add('active');
+            var cb = document.getElementById('lvscPowerSave');
+            if (cb) cb.checked = true;
+            var ocb = document.getElementById('lvscPowerSaveOverlayCb');
+            if (ocb) ocb.checked = true;
+            updatePowerSaveInfo();
+            if (_powerSaveTimer) clearInterval(_powerSaveTimer);
+            _powerSaveTimer = setInterval(updatePowerSaveInfo, 1500);
+            var fsCb = document.getElementById('lvscPowerSaveFullscreen');
+            if (fsCb && fsCb.checked) {
+                try { var p = document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(function(){}); } catch(e) {}
+            }
+        }
+        function disablePowerSave() {
+            isPowerSave = false;
+            var ov = document.getElementById('lvscPowerSaveOverlay');
+            if (ov) ov.classList.remove('active');
+            var cb = document.getElementById('lvscPowerSave');
+            if (cb) cb.checked = false;
+            var ocb = document.getElementById('lvscPowerSaveOverlayCb');
+            if (ocb) ocb.checked = false;
+            if (_powerSaveTimer) { clearInterval(_powerSaveTimer); _powerSaveTimer = null; }
+            try { if (document.fullscreenElement) document.exitFullscreen(); } catch(e) {}
+        }
+        var psCb = document.getElementById('lvscPowerSave');
+        if (psCb) psCb.onchange = function() { if (this.checked) enablePowerSave(); else disablePowerSave(); };
+        var psOcb = document.getElementById('lvscPowerSaveOverlayCb');
+        if (psOcb) psOcb.onchange = function() { if (this.checked) enablePowerSave(); else disablePowerSave(); };
+        var psFsCb = document.getElementById('lvscPowerSaveFullscreen');
+        if (psFsCb) psFsCb.onchange = function() {
+            if (this.checked) {
+                try { var p2 = document.documentElement.requestFullscreen(); if (p2 && p2.catch) p2.catch(function(){}); } catch(e) {}
+            } else {
+                try { if (document.fullscreenElement) document.exitFullscreen(); } catch(e) {}
+            }
+        };
+        document.addEventListener('fullscreenchange', function() {
+            var fsCb2 = document.getElementById('lvscPowerSaveFullscreen');
+            if (!document.fullscreenElement && isPowerSave && (fsCb2 && fsCb2.checked)) disablePowerSave();
+        });
+        // ---- 省电模式结束 ----
+                // ---- 画中画模式 ----
+        var _pipWindow = null;
+        var _pipFloat = null;
+        var _pipTimer = null;
+        var _pipCanvas = null;
+        var _pipVideo = null;
+        var _pipStream = null;
+        function _pipSpiritLine() {
+            var info = getSpiritInfo();
+            if (!info) return '--';
+            var effMult = 1;
+            if (state.keepCurrentMultiplier) {
+                var gSel = document.getElementById('exploreMultiplier');
+                if (gSel && gSel.value) effMult = Number(gSel.value) || 1;
+            } else {
+                effMult = Number(state.preferMultiplier) || 1;
+            }
+            return info.spirit + ' / ' + info.maxSpirit + '  每次-' + (info.cost * effMult);
+        }
+        function _pipRealmLine() { return getPlayerRealmStr() || '--'; }
+        function _pipStatusLine() {
+            var stEl = document.getElementById('lvscStatus');
+            return stEl ? stEl.textContent : '';
+        }
+        function _pipRefresh() {
+            if (_pipWindow && !_pipWindow.closed) {
+                try {
+                    var d = _pipWindow.document;
+                    var sl = d.getElementById('pipSpiritLine');
+                    var rl = d.getElementById('pipRealmLine');
+                    var st = d.getElementById('pipStatusLine');
+                    if (sl) sl.textContent = _pipSpiritLine();
+                    if (rl) rl.textContent = _pipRealmLine();
+                    if (st) st.textContent = _pipStatusLine();
+                } catch(e) {}
+            }
+            if (_pipFloat) _pipDrawCanvas();
+        }
+        function _pipDrawCanvas() {
+            if (!_pipCanvas) return;
+            var ctx = _pipCanvas.getContext('2d');
+            ctx.clearRect(0, 0, 380, 160);
+            ctx.fillStyle = '#222';
+            ctx.fillRect(0, 0, 380, 160);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 16px Consolas, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(_pipSpiritLine(), 190, 42);
+            ctx.fillText(_pipRealmLine(), 190, 76);
+            ctx.fillStyle = '#aaa';
+            ctx.font = '13px Consolas, monospace';
+            ctx.fillText(_pipStatusLine(), 190, 110);
+            ctx.fillStyle = '#4af';
+            ctx.font = 'bold 13px Consolas, monospace';
+            ctx.fillText('▷ 请双击该画面全屏后\n手动切换外部画中画', 190, 144);
+        }
+        function _pipOpenDesktop() {
+            if (_pipWindow && !_pipWindow.closed) return true;
+            if (typeof documentPictureInPicture === 'undefined' || typeof documentPictureInPicture.requestWindow !== 'function') return false;
+            try {
+                documentPictureInPicture.requestWindow({ width: 380, height: 170 }).then(function(w) {
+                    _pipWindow = w;
+                    w.document.title = '画中画';
+                    w.document.body.style.cssText = 'margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh';
+                    w.document.body.innerHTML = '<div style=\"font-family:Consolas,monospace;font-size:16px;color:#ccc;text-align:center;line-height:1.8;white-space:nowrap;padding:16px\">' +
+                        '<div id=\"pipSpiritLine\">' + _pipSpiritLine() + '</div>' +
+                        '<div id=\"pipRealmLine\">' + _pipRealmLine() + '</div>' +
+                        '<div id=\"pipStatusLine\" style=\"font-size:13px;color:#888\">' + _pipStatusLine() + '</div></div>';
+                    _pipTimer = setInterval(_pipRefresh, 1500);
+                    w.addEventListener('pagehide', function() {
+                        if (_pipTimer) { clearInterval(_pipTimer); _pipTimer = null; }
+                        _pipWindow = null;
+                        var cb = document.getElementById('lvscPipMode');
+                        if (cb) cb.checked = false;
+                    });
+                }).catch(function() {});
+                return true;
+            } catch(e) { return false; }
+        }
+        function _pipOpenFloat() {
+            if (_pipFloat) return;
+            _pipFloat = document.createElement('div');
+            _pipFloat.id = 'lvscPipFloat';
+            _pipFloat.style.cssText = 'position:fixed;bottom:20px;right:20px;width:190px;height:80px;border-radius:8px;overflow:hidden;z-index:2147483600;box-shadow:0 0 8px rgba(0,0,0,0.6);touch-action:none';
+            _pipCanvas = document.createElement('canvas');
+            _pipCanvas.width = 380;
+            _pipCanvas.height = 160;
+            _pipCanvas.style.cssText = 'width:100%;height:100%;display:block;pointer-events:none';
+            _pipFloat.appendChild(_pipCanvas);
+            _pipVideo = document.createElement('video');
+            _pipVideo.muted = true;
+            _pipVideo.playsInline = true;
+            _pipVideo.setAttribute('playsinline', '');
+            _pipVideo.setAttribute('webkit-playsinline', '');
+            _pipVideo.setAttribute('controls', '');
+            _pipVideo.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;opacity:0.6';
+            _pipFloat.appendChild(_pipVideo);
+            document.body.appendChild(_pipFloat);
+            _pipStream = _pipCanvas.captureStream(30);
+            _pipVideo.srcObject = _pipStream;
+            _pipDrawCanvas();
+            _pipVideo.play().catch(function(){});
+            // 拖拽（支持鼠标和触摸）
+            var dragging = false, sx, sy, ox, oy;
+            function onStart(e) {
+                dragging = true;
+                var p = e.touches ? e.touches[0] : e;
+                sx = p.clientX; sy = p.clientY;
+                ox = _pipFloat.offsetLeft; oy = _pipFloat.offsetTop;
+                _pipFloat.style.transition = 'none';
+            }
+            function onMove(e) {
+                if (!dragging) return;
+                e.preventDefault();
+                var p = e.touches ? e.touches[0] : e;
+                _pipFloat.style.left = (ox + p.clientX - sx) + 'px';
+                _pipFloat.style.top = (oy + p.clientY - sy) + 'px';
+                _pipFloat.style.right = 'auto';
+                _pipFloat.style.bottom = 'auto';
+            }
+            function onEnd() { dragging = false; }
+            _pipFloat.addEventListener('mousedown', onStart);
+            _pipFloat.addEventListener('touchstart', onStart, {passive: false});
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('touchmove', onMove, {passive: false});
+            document.addEventListener('mouseup', onEnd);
+            document.addEventListener('touchend', onEnd);
+        }
+        function _pipOpen() {
+            if (_pipOpenDesktop()) return;
+            _pipOpenFloat();
+            _pipTimer = setInterval(_pipRefresh, 1500);
+        }
+        function _pipClose() {
+            if (_pipTimer) { clearInterval(_pipTimer); _pipTimer = null; }
+            if (_pipWindow && !_pipWindow.closed) {
+                try { _pipWindow.close(); } catch(e) {}
+            }
+            _pipWindow = null;
+            if (_pipFloat && _pipFloat.parentNode) {
+                _pipFloat.parentNode.removeChild(_pipFloat);
+                _pipFloat = null;
+            }
+            _pipCanvas = null;
+            _pipVideo = null;
+            _pipStream = null;
+            try { if (document.pictureInPictureElement) document.exitPictureInPicture(); } catch(e) {}
+            var cb = document.getElementById('lvscPipMode');
+            if (cb) cb.checked = false;
+        }
+        var pipModeCb = document.getElementById('lvscPipMode');
+        if (pipModeCb) pipModeCb.onchange = function() {
+            if (this.checked) _pipOpen();
+            else _pipClose();
+        };
+        // ---- 画中画结束 ----
+        // ---- 通知模式 ----
+        var _notifyTimer = null;
+        var _notifyEnabled = false;
+        function _notifySpiritLine() {
+            var info = getSpiritInfo();
+            if (!info) return '--';
+            var effMult = 1;
+            if (state.keepCurrentMultiplier) {
+                var gSel = document.getElementById('exploreMultiplier');
+                if (gSel && gSel.value) effMult = Number(gSel.value) || 1;
+            } else {
+                effMult = Number(state.preferMultiplier) || 1;
+            }
+            return '神识: ' + info.spirit + ' / ' + info.maxSpirit + '  每次-' + (info.cost * effMult);
+        }
+        function _notifyRealmLine() { return '境界: ' + (getPlayerRealmStr() || '--'); }
+        function _notifyStatusLine() {
+            var stEl = document.getElementById('lvscStatus');
+            return '状态: ' + (stEl ? stEl.textContent : '');
+        }
+        function _notifyUpdate() {
+            if (!_notifyEnabled) return;
+            var title = 'LingVerse';
+            var body = _notifySpiritLine() + '\n' + _notifyRealmLine() + '\n' + _notifyStatusLine();
+            try {
+                if ('setAppBadge' in navigator) {
+                    var info = getSpiritInfo();
+                    if (info) {
+                        var pct = info.maxSpirit > 0 ? Math.round(info.spirit / info.maxSpirit * 100) : 0;
+                        navigator.setAppBadge(pct).catch(function(){});
+                    }
+                }
+            } catch(e) {}
+            try {
+                var n = new Notification(title, {
+                    body: body,
+                    tag: 'lvsc-status',
+                    requireInteraction: true,
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="%2316806a"/><text x="32" y="42" font-size="32" text-anchor="middle" fill="white">灵</text></svg>'
+                });
+                n.onshow = function() { setTimeout(function() { try { n.close(); } catch(e) {} }, 4000); };
+            } catch(e) {}
+        }
+        function _notifyStart() {
+            if (!('Notification' in window)) { alert('此浏览器不支持通知'); return; }
+            if (Notification.permission === 'denied') { alert('通知权限已被拒绝，请在浏览器设置中开启'); return; }
+            if (Notification.permission === 'granted') {
+                _notifyEnabled = true;
+                _notifyUpdate();
+                if (_notifyTimer) clearInterval(_notifyTimer);
+                _notifyTimer = setInterval(_notifyUpdate, 5000);
+                return;
+            }
+            Notification.requestPermission().then(function(p) {
+                if (p === 'granted') {
+                    _notifyEnabled = true;
+                    _notifyUpdate();
+                    if (_notifyTimer) clearInterval(_notifyTimer);
+                    _notifyTimer = setInterval(_notifyUpdate, 5000);
+                } else {
+                    alert('需要通知权限才能使用该功能');
+                    var cb = document.getElementById('lvscNotifyMode');
+                    if (cb) cb.checked = false;
+                }
+            });
+        }
+        function _notifyStop() {
+            _notifyEnabled = false;
+            if (_notifyTimer) { clearInterval(_notifyTimer); _notifyTimer = null; }
+            try { if ('setAppBadge' in navigator) navigator.clearAppBadge().catch(function(){}); } catch(e) {}
+        }
+        var notifyCb = document.getElementById('lvscNotifyMode');
+        if (notifyCb) notifyCb.onchange = function() {
+            if (this.checked) _notifyStart();
+            else _notifyStop();
+        };
+        // ---- 通知结束 ----
         var aib = document.getElementById('lvscAutoInscriptionBtn'); if (aib) aib.onclick = toggleAutoInscription;
         var ie = document.getElementById('lvscInscriptionEquipment'); if (ie) ie.onchange = function () {
             if (this.value && this.value !== '__current__') {
@@ -7570,6 +9045,10 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         var cbm = document.getElementById('lvscCraftAutoBuyMats'); if (cbm) { cbm.checked = state.craftAutoBuyMats; cbm.onchange = function () { state.craftAutoBuyMats = this.checked; persistSetting('lvSpiritCleaner.craftAutoBuyMats', this.checked); }; }
         var ctm = document.getElementById('lvscCraftAutoTimer'); if (ctm) { ctm.checked = state.craftAutoTimer; ctm.onchange = function () { state.craftAutoTimer = this.checked; persistSetting('lvSpiritCleaner.craftAutoTimer', this.checked); if (this.checked) updateNextAutoCraftTime(); }; }
         var ctm2 = document.getElementById('lvscCraftTimerMin'); if (ctm2) { ctm2.value = String(state.craftTimerMin); ctm2.onchange = function () { state.craftTimerMin = Math.max(1, Number(this.value) || 10); persistSetting('lvSpiritCleaner.craftTimerMin', String(state.craftTimerMin)); if (state.craftAutoTimer) updateNextAutoCraftTime(); }; }
+        var cDelayMin = document.getElementById('lvscCraftDelayMin');
+        if (cDelayMin) { cDelayMin.value = String(state.craftDelayMin || 5); cDelayMin.onchange = function() { state.craftDelayMin = Math.max(0.5, Number(this.value) || 5); persistSetting('lvSpiritCleaner.craftDelayMin', String(state.craftDelayMin)); }; }
+        var cDelayMax = document.getElementById('lvscCraftDelayMax');
+        if (cDelayMax) { cDelayMax.value = String(state.craftDelayMax || 10); cDelayMax.onchange = function() { state.craftDelayMax = Math.max(Number(state.craftDelayMin || 5), Number(this.value) || 10); persistSetting('lvSpiritCleaner.craftDelayMax', String(state.craftDelayMax)); }; }
         var timerModeSel = document.getElementById('lvscCraftTimerMode');
         if (timerModeSel) { timerModeSel.value = state.craftTimerMode; timerModeSel.onchange = function () { state.craftTimerMode = this.value; persistSetting('lvSpiritCleaner.craftTimerMode', this.value); }; }
         async function refreshCraftRecipes() {
@@ -7607,7 +9086,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         var ab = document.getElementById('lvscAutoBail'); if (ab) { ab.checked = state.autoBail; ab.onchange = function () { state.autoBail = this.checked; persistSetting('lvSpiritCleaner.autoBail', state.autoBail); }; }
         var bm = document.getElementById('lvscBailMethod'); if (bm) { bm.value = state.bailMethod; bm.onchange = function () { state.bailMethod = this.value; persistSetting('lvSpiritCleaner.bailMethod', this.value); }; }
         var av = document.getElementById('lvscAutoVerify'); if (av) { av.checked = state.autoVerify; av.onchange = function () { state.autoVerify = this.checked; persistSetting('lvSpiritCleaner.autoVerify', this.checked); }; }
-        var sm = document.getElementById('lvscSafeMode'); if (sm) { sm.checked = state.safeMode; sm.onchange = function () { state.safeMode = this.checked; persistSetting('lvSpiritCleaner.safeMode', this.checked ? '1' : '0'); if (state.safeMode) { stopAllAuto(); setStatus('🛡 安全模式已开启', 'warn'); } else { setStatus('✅ 安全模式已关闭', 'ok'); } }; window._lvscStopAllAuto = stopAllAuto; }
+        var sm = document.getElementById('lvscSafeMode'); if (sm) { sm.checked = state.safeMode; sm.onchange = function () { state.safeMode = this.checked; persistSetting('lvSpiritCleaner.safeMode', this.checked ? '1' : '0'); if (state.safeMode) { backupOriginalSettings(); applySafeModeConfig(); stopAllAuto(); setStatus('🛡 安全模式已开启，应用安全配置', 'warn'); setTimeout(function(){ location.reload(); }, 500); } else { restoreOriginalSettings(); setStatus('✅ 安全模式已关闭，还原原配置', 'ok'); setTimeout(function(){ location.reload(); }, 500); } }; window._lvscStopAllAuto = stopAllAuto; }
         var abc = document.getElementById('lvscAutoBailClick'); if (abc) { abc.checked = state.autoBailClick; abc.onchange = function () { state.autoBailClick = this.checked; persistSetting('lvSpiritCleaner.autoBailClick', state.autoBailClick); }; }
         setInterval(function () { if (!state.safeMode && state.autoBail) checkAndAutoBail(false); }, 30000);
         var amc = document.getElementById('lvscAutoMonthlyCard'); if (amc) { amc.checked = state.autoMonthlyCard; amc.onchange = function () { state.autoMonthlyCard = this.checked; persistSetting('lvSpiritCleaner.autoMonthlyCard', state.autoMonthlyCard ? '1' : '0'); }; }
@@ -7654,7 +9133,12 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         };
         startAutoCraftTimer();
         document.getElementById('lvscCollapseBtn').onclick = function () {
-            setPanelCollapsed(panel, true);
+            if (panel.classList.contains('lvsc-embedded')) {
+                panel.classList.add('lvsc-mobile-hidden');
+                try { stop('已隐藏'); } catch (_) {}
+            } else {
+                setPanelCollapsed(panel, true);
+            }
         };
         document.getElementById('lvscExpandBtn').onclick = function () {
             setPanelCollapsed(panel, false);
@@ -7942,15 +9426,13 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             localStorage.removeItem('lvscTeachDate');
             masterLog('🗑️ 已清空今日记录（赠物/赠灵石/授业可再次执行）');
         };
+            document.getElementById('lvscClearMasterLog').onclick = function() {
+            localStorage.removeItem('lvscMasterLogArr');
+            localStorage.removeItem('lvscMasterLogLastDate');
+            renderMasterLog();
+        };
         // 恢复日志
-        var savedLogs = [];
-        try { savedLogs = JSON.parse(localStorage.getItem('lvscMasterLogArr') || '[]'); } catch(_) {}
-        if (savedLogs.length) {
-            var logEl = document.getElementById('lvscMasterLog');
-            if (logEl) {
-                logEl.textContent = savedLogs.join('\n');
-            }
-        }
+        renderMasterLog();
 
         // 物品搜索逻辑
         var giftSearchBtn = document.getElementById('lvscGiftItemSearchBtn');
@@ -7964,7 +9446,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             try {
                 var invR = await gameApi().get('/api/game/inventory/category?tab=all&page=1&size=200');
                 if (!invR || invR.code !== 200 || !invR.data || !Array.isArray(invR.data.items)) {
-                    giftSearchResults.innerHTML = '<div style="color:var(--text-muted);padding:2px 6px">获取背包失败</div>';
+                    giftSearchResults.innerHTML = '<div style="color:#aaa;padding:2px 6px">获取背包失败</div>';
                     return;
                 }
                 giftSearchResults.innerHTML = '';
@@ -8001,7 +9483,7 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
                     giftSearchResults.appendChild(row);
                 }
                 if (!found) {
-                    giftSearchResults.innerHTML = '<div style="color:var(--text-muted);padding:2px 6px">背包中无匹配物品</div>';
+                    giftSearchResults.innerHTML = '<div style="color:#aaa;padding:2px 6px">背包中无匹配物品</div>';
                 }
             } catch (_) { giftSearchResults.innerHTML = '搜索失败'; }
         });
@@ -8011,8 +9493,15 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
             ensureHiddenCharm(true);
         };
         document.getElementById('lvscClose').onclick = function () {
-            stop('已隐藏');
-            panel.style.display = 'none';
+            if (panel.classList.contains('lvsc-embedded')) {
+                panel.classList.add('lvsc-mobile-hidden');
+                try { stop('已隐藏'); } catch (_) {}
+            } else {
+                panel.classList.add('lvsc-hide');
+                panel.classList.remove('lvsc-show');
+                setTimeout(function(){if(panel.classList.contains('lvsc-hide')){panel.style.display='none';panel.classList.remove('lvsc-hide');}},250);
+                try { stop('已隐藏'); } catch (_) {}
+            }
         };
         Array.prototype.forEach.call(document.querySelectorAll('#lvscTabs .lvsc-tab'), function (button) {
             button.onclick = function () {
@@ -8122,6 +9611,41 @@ panel.style.zIndex = String(PANEL_Z_INDEX);
         onStr('lvscAutoMpPriority', 'autoMpPriority');
         onStr('lvscUpdateManifestUrl', 'updateManifestUrl');
         onChk('lvscAutoMeditate', 'autoMeditate');
+        // 快速清理按钮
+        (function(){
+            var btn = document.getElementById('lvscQuickClearBtn');
+            if (btn) {
+                btn.onclick = function () {
+                    if (quickClearRunning) {
+                        quickClearRunning = false;
+                        try { localStorage.removeItem('lvSpiritCleaner.quickClearRunning'); } catch(_) {}
+                        btn.textContent = '启动';
+                        btn.style.background = 'linear-gradient(135deg,#6bc9a0,#4a8)';
+                        var _a=document.getElementById('lvscActionsQuickBtn');if(_a){_a.textContent='快速清理';_a.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}
+                        var _c=document.getElementById('lvscCompactQuickBtn');if(_c){_c.textContent='快清';_c.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}
+                        setStatus('快速清理已停止', 'idle');
+                        updateMeter();
+                        return;
+                    }
+                    if (running) { setStatus('清理运行中，无法启动快速清理', 'warn'); return; }
+                    btn.textContent = '停止';
+                                        btn.textContent = '停止';
+                    btn.style.background = 'linear-gradient(135deg,#e06060,#c04040)';
+                    var _bA=document.getElementById('lvscActionsQuickBtn');if(_bA){_bA.textContent='停止';_bA.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    var _bC=document.getElementById('lvscCompactQuickBtn');if(_bC){_bC.textContent='停止';_bC.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    quickClearLoop();
+                };
+            }
+                    document.getElementById('lvscActionsQuickBtn').onclick = function(){
+            if(quickClearRunning){quickClearRunning=false;try{localStorage.removeItem('lvSpiritCleaner.quickClearRunning')}catch(_){}updateMeter();var b=document.getElementById('lvscQuickClearBtn');if(b){b.textContent='启动';b.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}var c=document.getElementById('lvscActionsQuickBtn');if(c){c.textContent='快速清理';c.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}var d=document.getElementById('lvscCompactQuickBtn');if(d){d.textContent='快清';d.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}setStatus('快速清理已停止','idle');return}
+            if(running){setStatus('清理运行中','warn');return}
+            var b2=document.getElementById('lvscQuickClearBtn');if(b2){b2.textContent='停止';b2.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+            var c2=document.getElementById('lvscActionsQuickBtn');if(c2){c2.textContent='停止';c2.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+            var d2=document.getElementById('lvscCompactQuickBtn');if(d2){d2.textContent='停止';d2.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+            quickClearLoop();
+        };
+        })();
+        onNum('lvscQuickClearTargetPct', 'quickClearTargetPct', 1, 100);
         onNum('lvscMeditateStopSpirit', 'meditateStopSpirit', 0, 100);  // %输入限0-100
         onNum('lvscMonitorStartSpirit', 'monitorStartSpirit', 0, 100); // %输入限0-100
         onChk('lvscAutoExploreAfterMeditate', 'autoExploreAfterMeditate');
@@ -8303,17 +9827,18 @@ setInterval(function() {
         if (state.autoRecruit || state.wecomNotify) {
             setTimeout(function () { startRecruitObserver(); }, 2000);
         }
-                (function(){document.querySelectorAll('.lvsc-tab-panel>.lvsc-section').forEach(function(sec){var t=(sec.querySelector('.lvsc-section-title-row span')||{}).textContent||'';var target='explore';if(/^(妖兽|护道|商人|冥想|装备|本命|自动刷新)/.test(t))target='explore';else if(/^(炼制|批量炼制|铭文|功法|师徒|监控|其他|出售|洗练石|气运|出狱|灵田|登录|月卡|收徒|藏宝图|珍宝阁|扫荡)/.test(t))target='auto';else if(/^(更新|通知|配置|安全|主题)/.test(t))target='other';var panel=document.querySelector('[data-tab-panel="'+target+'"]');if(panel&&sec.parentNode!==panel)panel.appendChild(sec)})})();
+                (function(){document.querySelectorAll('.lvsc-tab-panel>.lvsc-section').forEach(function(sec){var t=(sec.querySelector('.lvsc-section-title-row span')||{}).textContent||'';var target='explore';if(/^(妖兽|护道|商人|冥想|装备|本命|自动刷新)/.test(t))target='explore';else if(/^(炼制|批量炼制|铭文|功法|师徒|监控|其他|出售|洗练石|气运|出狱|灵田|登录|月卡|收徒|藏宝图|珍宝阁|扫荡|竞技场模拟|自动抢红包)/.test(t))target='auto';
+else if(/^(更新|通知|配置|安全|主题|模式)/.test(t))target='other';var panel=document.querySelector('[data-tab-panel="'+target+'"]');if(panel&&sec.parentNode!==panel)panel.appendChild(sec)})})();
         // ====== 动态功能注入 ======
         try {(function() {
             function el(t, c, h) { var e = document.createElement(t); if (c) e.className = c; if (h) e.innerHTML = h; return e; }
             function sec(title, badge) { var s = el('div', 'lvsc-section'); var bh = ''; if (badge === 'auto') { bh = '<span class="lvsc-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;background:rgba(107,201,160,.14);color:#6bc9a0">自动</span>'; s.setAttribute('data-badge', 'auto'); } else if (badge === 'manual') { bh = '<span class="lvsc-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;background:rgba(224,160,64,.14);color:#e0a040">需启动</span>'; s.setAttribute('data-badge', 'manual'); } s.appendChild(el('div', 'lvsc-section-title-row', '<span>' + title + bh + '</span>')); return s; }
             function cat(h,t){var p=document.querySelector('[data-tab-panel="auto"]');if(!p)return h;var cs=p.children;for(var i=0;i<cs.length;i++){var sec=cs[i];if(sec.classList&&sec.classList.contains('lvsc-section')){var tr=sec.querySelector('.lvsc-section-title-row');if(!tr)continue;var sp=tr.querySelector('span');if(sp&&sp.textContent.trim()===t){var nx=sec.querySelector('.lvsc-card-grid');if(nx)nx.appendChild(h);else sec.appendChild(h);return h}}}p.appendChild(h);return h}
-function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-btn'; b.style.cssText = 'height:29px;padding:0 8px;margin-left:4px'; b.textContent = '刷新'; return b; }
+function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-btn'; b.style.cssText = 'height:29px;padding:0 8px;margin-left:4px;color:#000'; b.textContent = '刷新'; return b; }
             function goldBtn(id, text) { var b = el('button'); b.id = id; b.className = 'lvsc-action-btn'; b.style.cssText = 'flex:1;height:34px'; b.textContent = text; return b; }
             function actBtn(id, text) { var b = el('button'); b.id = id; b.className = 'lvsc-action-btn'; b.style.cssText = 'flex:1;height:32px'; b.textContent = text; return b; }
             function stopBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-stop-btn'; b.style.cssText = 'flex:1;height:32px;display:none'; b.textContent = '停止'; return b; }
-            function logDiv(id) { var d = el('div'); d.id = id; d.style.cssText = 'min-height:60px;max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px;font-family:Consolas,monospace'; d.textContent = '待命'; return d; }
+            function logDiv(id) { var d = el('div'); d.id = id; d.style.cssText = 'min-height:60px;max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px;font-family:Consolas,monospace'; d.textContent = '待命'; return d; }
 
 // 涅槃重生丹 → auto tab
 (function() {
@@ -8325,7 +9850,8 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
     '<label>每次炼制<input id=\"lvscNirvanaBatchSize\" type=\"number\" min=\"1\" max=\"100\" value=\"' + (state.nirvanaBatchSize || 10) + '\" style=\"width:70px\"></label>' +
     '<label>每次使用<input id=\"lvscNirvanaUseQty\" type=\"number\" min=\"1\" max=\"999\" value=\"' + (state.nirvanaUseQty || 1) + '\" style=\"width:70px\"></label>' +
     '<label class="lvsc-check" style="font-size:11px"><input id="lvscNirvanaAutoTimer" type="checkbox">定时炼制</label>' +
-    '<label style="font-size:11px">间隔(分钟)<input id="lvscNirvanaTimerMin" type="number" min="1" value="' + (state.nirvanaTimerMin || 10) + '" style="width:60px;height:20px"></label>' +
+    '<label style=\"font-size:11px\">间隔(分钟)<input id=\"lvscNirvanaTimerMin\" type=\"number\" min=\"1\" value=\"' + (state.nirvanaTimerMin || 10) + '\" style=\"width:60px;height:20px\"></label>' +
+    '<div style=\"display:flex;align-items:center;gap:4px;font-size:11px;color:#cfc6b2\"><span style=\"white-space:nowrap\">每批间隔(秒)</span><input id=\"lvscNirvanaDelayMin\" type=\"number\" min=\"0.5\" step=\"0.5\" value=\"' + (state.nirvanaDelayMin || 5) + '\" style=\"width:45px;height:20px;flex:none\">~<input id=\"lvscNirvanaDelayMax\" type=\"number\" min=\"0.5\" step=\"0.5\" value=\"' + (state.nirvanaDelayMax || 10) + '\" style=\"width:45px;height:20px;flex:none\"></div>' +
     '<span id="lvscNirvanaCountdown" style="font-size:11px;color:#dbb970;margin-left:4px;white-space:nowrap"></span>' +
     '<div style="display:flex;gap:6px;margin-top:4px"><button id="lvscAutoNirvanaBtn" style="flex:1;height:32px;background:linear-gradient(135deg,#dbb970,#c9a050);color:#17141d;border:0!important;border-radius:6px;cursor:pointer;font-weight:700;">开始炼制</button><button id="lvscStopNirvanaBtn" style="flex:1;height:32px;background:rgba(255,255,255,.08);color:#cfc6b2;border:1px solid rgba(255,255,255,.1)!important;border-radius:6px;cursor:pointer;font-weight:700;display:none;">停止</button></div>';
     s.appendChild(g);
@@ -8370,6 +9896,10 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
         if (nirvAutoTimer) { nirvAutoTimer.checked = state.nirvanaAutoTimer; nirvAutoTimer.onchange = function() { state.nirvanaAutoTimer = this.checked; persistSetting('lvSpiritCleaner.nirvanaAutoTimer', this.checked); if (this.checked) { updateNextAutoNirvanaTime(); startAutoNirvanaTimer(); } }; }
         var nirvTimerMin = document.getElementById('lvscNirvanaTimerMin');
         if (nirvTimerMin) { nirvTimerMin.value = state.nirvanaTimerMin || 10; nirvTimerMin.onchange = function() { state.nirvanaTimerMin = Math.max(1, Number(this.value)||10); persistSetting('lvSpiritCleaner.nirvanaTimerMin', String(state.nirvanaTimerMin)); if (state.nirvanaAutoTimer) updateNextAutoNirvanaTime(); }; }
+        var nirvDelayMin = document.getElementById('lvscNirvanaDelayMin');
+        if (nirvDelayMin) { nirvDelayMin.value = String(state.nirvanaDelayMin || 5); nirvDelayMin.onchange = function() { state.nirvanaDelayMin = Math.max(0.5, Number(this.value) || 5); persistSetting('lvSpiritCleaner.nirvanaDelayMin', String(state.nirvanaDelayMin)); }; }
+        var nirvDelayMax = document.getElementById('lvscNirvanaDelayMax');
+        if (nirvDelayMax) { nirvDelayMax.value = String(state.nirvanaDelayMax || 10); nirvDelayMax.onchange = function() { state.nirvanaDelayMax = Math.max(Number(state.nirvanaDelayMin || 5), Number(this.value) || 10); persistSetting('lvSpiritCleaner.nirvanaDelayMax', String(state.nirvanaDelayMax)); }; }
         // 恢复自动定时炼制（如果之前勾选了，恢复后启动倒计时）
         if (state.nirvanaAutoTimer) {
             setTimeout(function() { updateNextAutoNirvanaTime(); startAutoNirvanaTimer(); }, 2000);
@@ -8435,7 +9965,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                         var _inscBtn = document.getElementById('lvscAutoInscriptionBtn');
                         if (_inscBtn) _inscBtn.onclick = toggleAutoInscription;
                         s.appendChild(el('div', 'lvsc-help', '先打开游戏里的铭文洗练界面。自动装配优先级：空槽位 → 非目标槽位 → 目标槽最低值且新值更高。关闭自动装配时，命中目标会保留结果等待处理。'));
-                        s.appendChild(el('div', '', '<div id="lvscInscriptionStats">次数 0 / 达成 0 / 放弃 0</div><div id="lvscInscriptionLog" style="min-height:130px;max-height:190px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#cfc6b2;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:8px">待命</div>'));
+                        s.appendChild(el('div', '', '<div id="lvscInscriptionStats">次数 0 / 达成 0 / 放弃 0</div><div id="lvscInscriptionLog" style="min-height:80px;max-height:160px;overflow:auto;white-space:pre-wrap;font-size:11px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:8px">待命</div>'));
                         
                         // 恢复铭文洗练控件值 + 绑定onchange保存（元素已在DOM中）
                         (function(){
@@ -8538,10 +10068,11 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 s.appendChild(addRow);
                 // 启用 + 间隔
                 var cfgRow = el('div'); cfgRow.style.cssText = 'display:flex;gap:6px;align-items:center';
-                cfgRow.innerHTML = '<label class="lvsc-check" style="font-size:11px"><input id="lvscAutoDisposeEnabled" type="checkbox">启用监控</label><label class="lvsc-check" style="font-size:11px"><input id="lvscAutoSynthesize" type="checkbox">自动凝聚碎片</label><label style="font-size:11px">间隔(秒)<input id="lvscAutoDisposeInterval" type="number" min="60" value="' + state.autoDisposeInterval + '" style="width:70px;height:24px"></label>';
+                var _asdChecked = localStorage.getItem('lvSpiritCleaner.autoStartDispose') === '1' ? ' checked' : '';
+                cfgRow.innerHTML = '<label class="lvsc-check" style="font-size:11px"><input id="lvscAutoDisposeEnabled" type="checkbox">启用监控</label><label class="lvsc-check" style="font-size:11px"><input id="lvscAutoSynthesize" type="checkbox">自动凝聚碎片</label><label class="lvsc-check" style="font-size:11px"><input id="lvscAutoStartDispose" type="checkbox"' + _asdChecked + '>刷新后自启</label><label style="font-size:11px">间隔(秒)<input id="lvscAutoDisposeInterval" type="number" min="60" value="' + state.autoDisposeInterval + '" style="width:70px;height:24px"></label>';
                 s.appendChild(cfgRow);
                 // 立即恢复 checkbox 状态（防止 buildPanel 后续中断导致状态丢失）
-                var deCb = document.getElementById('lvscAutoDisposeEnabled');
+                var deCb = cfgRow.querySelector('#lvscAutoDisposeEnabled');
                 if (deCb) {
                     deCb.checked = state.autoDisposeEnabled;
                     deCb.onchange = function() {
@@ -8549,7 +10080,18 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                         persistSetting('lvSpiritCleaner.autoDisposeEnabled', this.checked);
                     };
                 }
-                var synCb = document.getElementById('lvscAutoSynthesize');
+                var asDisp = cfgRow.querySelector('#lvscAutoStartDispose');
+                if (asDisp) {
+                    asDisp.checked = state.autoStartDispose;
+                    asDisp.onchange = function() {
+                        state.autoStartDispose = this.checked;
+                        persistSetting('lvSpiritCleaner.autoStartDispose', this.checked ? '1' : '0');
+                        if (this.checked && !autoDisposeRunning) {
+                            autoDisposeLoop();
+                        }
+                    };
+                }
+                var synCb = cfgRow.querySelector('#lvscAutoSynthesize');
                 if (synCb) {
                     synCb.checked = state.autoSynthesize;
                     synCb.onchange = function() {
@@ -8557,7 +10099,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                         persistSetting('lvSpiritCleaner.autoSynthesize', this.checked);
                     };
                 }
-                var deIntv = document.getElementById('lvscAutoDisposeInterval');
+                var deIntv = cfgRow.querySelector('#lvscAutoDisposeInterval');
                 if (deIntv) {
                     deIntv.value = state.autoDisposeInterval || 300;
                     deIntv.onchange = function() {
@@ -8588,17 +10130,17 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 s.appendChild(listDiv);
                 // 搜索保护
                 var searchRow = el('div'); searchRow.style.cssText = 'display:flex;gap:4px;margin-top:4px';
-                var searchInput = el('input'); searchInput.id = 'lvscDisposeSearch'; searchInput.placeholder = '搜物品名加入保护'; searchInput.style.cssText = 'flex:1;height:24px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:#cfc6b2;padding:0 6px;font-size:11px';
+                var searchInput = el('input'); searchInput.id = 'lvscDisposeSearch'; searchInput.placeholder = '搜物品名加入保护'; searchInput.style.cssText = 'flex:1;height:24px;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:4px;color:#cfc6b2;padding:0 6px;font-size:11px';
                 var searchBtn = el('button'); searchBtn.textContent = '搜索'; searchBtn.style.cssText = 'height:24px;padding:0 8px;background:rgba(219,185,112,.16);color:#dbb970;border:1px solid rgba(219,185,112,.3);border-radius:4px;cursor:pointer;font-size:10px;white-space:nowrap';
                 searchRow.appendChild(searchInput); searchRow.appendChild(searchBtn);
                 s.appendChild(searchRow);
                 var searchResults = el('div'); searchResults.id = 'lvscDisposeSearchResults'; searchResults.style.cssText = 'display:none;max-height:200px;overflow:auto;font-size:10px;color:#cfc6b2;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06);border-radius:4px;padding:4px;margin-top:2px';
                 s.appendChild(searchResults);
                 // 保护列表
-                var protDiv = el('div'); protDiv.id = 'lvscDisposeProtectedList'; protDiv.style.cssText = 'min-height:16px;font-size:10px;color:var(--text-muted);margin-top:2px';
+                var protDiv = el('div'); protDiv.id = 'lvscDisposeProtectedList'; protDiv.style.cssText = 'min-height:16px;font-size:10px;color:#aaa;margin-top:2px';
                 s.appendChild(protDiv);
                 // 日志
-                var logDiv2 = el('div'); logDiv2.id = 'lvscDisposeLog'; logDiv2.style.cssText = 'min-height:40px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:var(--text-muted);background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.06);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px'; logDiv2.textContent = '等待执行...';
+                var logDiv2 = el('div'); logDiv2.id = 'lvscDisposeLog'; logDiv2.style.cssText = 'min-height:40px;max-height:100px;overflow:auto;white-space:pre-wrap;font-size:10px;color:#797979;background:transparent;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:6px;font-family:Consolas,monospace;margin-top:4px'; logDiv2.textContent = '等待执行...';
                 s.appendChild(logDiv2);
                 var _c = document.getElementById('lvscMonitorSell'); if (_c) { while (s.children.length > 0) _c.appendChild(s.children[0]); }
                 // 日志函数
@@ -8615,7 +10157,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                     var actionNames = {sell:'出售',dismantle:'分解',discard:'丢弃'};
                     var scopeNames = {equip:'装备',pill:'丹药',scroll:'卷轴',talisman:'符箓',misc:'杂物',all:'全部'};
                     var rarityNames = ['','普通','优良','稀有','史诗'];
-                    if (!rules.length) { list.innerHTML = '<div style="color:var(--text-muted)">暂无监控规则，请添加</div>'; return; }
+                    if (!rules.length) { list.innerHTML = '<div style="color:#aaa">暂无监控规则，请添加</div>'; return; }
                     var html = '';
                     for (var i = 0; i < rules.length; i++) {
                         var r = rules[i];
@@ -8730,7 +10272,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                             });
                         });
                         if (!found) {
-                            searchResults.innerHTML = '<div style="color:var(--text-muted);padding:2px 6px">无结果，点此直接添加ID</div>';
+                            searchResults.innerHTML = '<div style="color:#aaa;padding:2px 6px">无结果，点此直接添加ID</div>';
                             searchResults.style.cursor = 'pointer';
                             searchResults.onclick = function() {
                                 var rawId = (searchInput.value || '').trim();
@@ -8752,7 +10294,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 window._renderProtectedList = function() {
                     var el = document.getElementById('lvscDisposeProtectedList'); if (!el) return;
                     var items = Array.isArray(state.autoDisposeProtected) ? state.autoDisposeProtected : [];
-                    if (!items.length) { el.innerHTML = '<span style=\"font-size:10px;color:var(--text-muted)\">未保护额外物品（锁定物品和空白卷轴自动排除）</span>'; return; }
+                    if (!items.length) { el.innerHTML = '<span style=\"font-size:10px;color:#aaa\">未保护额外物品（锁定物品和空白卷轴自动排除）</span>'; return; }
                     var RAR = ['','普通','优良','稀有','史诗','传说'];
                     // 分组：同 baseId 的放一起
                     var groups = {};
@@ -8828,8 +10370,9 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 g.querySelector('label').appendChild(rfrBtn('lvscRefreshFarm'));
                 c.appendChild(g);
                 c.insertAdjacentHTML('beforeend', '<div class=\"lvsc-grid2\" style=\"grid-template-columns:1fr 1fr 1fr\"><label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscFarmAutoHarvest\" type=\"checkbox\" checked>收获</label><label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscFarmAutoPlant\" type=\"checkbox\" checked>种植</label></div>');
-                c.insertAdjacentHTML('beforeend', '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscFarmExpandEn\" type=\"checkbox\"' + (state.farmExpandEnabled ? ' checked' : '') + '>自动开垦</label><span id=\"lvscFarmNextExpand\" style=\"font-size:10px;color:var(--text-muted);margin-left:4px\"></span>');
                 c.insertAdjacentHTML('beforeend', '<label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscFarmAutoInvasion\" type=\"checkbox\" checked>迎击入侵</label>');
+                var _afChecked = localStorage.getItem('lvSpiritCleaner.autoStartFarm') === '1' ? ' checked' : '';
+                c.insertAdjacentHTML('beforeend', '<label class="lvsc-check" style="font-size:11px"><input id="lvscAutoStartFarm" type="checkbox"' + _afChecked + '>刷新后自启</label>');
                 var btnRow = el('div'); btnRow.style.cssText = 'display:flex;gap:6px';
                 btnRow.appendChild(actBtn('lvscFarmStartBtn', '开始监控'));
                 btnRow.appendChild(stopBtn('lvscFarmStopBtn'));
@@ -8841,6 +10384,19 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 var fap = document.getElementById('lvscFarmAutoPlant'); if (fap) { fap.onchange = function() { state.farmAutoPlant = this.checked; persistSetting('lvSpiritCleaner.farmAutoPlant', this.checked); }; }
                 var fee = document.getElementById('lvscFarmExpandEn'); if (fee) { fee.onchange = function() { state.farmExpandEnabled = this.checked; persistSetting('lvSpiritCleaner.farmExpandEnabled', this.checked ? '1' : '0'); }; }
                 var fai = document.getElementById('lvscFarmAutoInvasion'); if (fai) { fai.onchange = function() { state.farmAutoInvasion = this.checked; persistSetting('lvSpiritCleaner.farmAutoInvasion', this.checked); }; }
+                var af = document.getElementById('lvscAutoStartFarm');
+                if (af) {
+                    af.checked = state.autoStartFarm;
+                    af.onchange = function() {
+                        state.autoStartFarm = this.checked;
+                        persistSetting('lvSpiritCleaner.autoStartFarm', this.checked ? '1' : '0');
+                        if (this.checked && !autoFarmRunning) {
+                            autoFarmLoop();
+                            var fb = document.getElementById('lvscFarmStartBtn'); if (fb) fb.style.display = 'none';
+                            var fs = document.getElementById('lvscFarmStopBtn'); if (fs) fs.style.display = '';
+                        }
+                    };
+                }
                 var fst = document.getElementById('lvscFarmStartBtn'); if (fst) fst.onclick = function() { this.style.display = 'none'; var sb = document.getElementById('lvscFarmStopBtn'); if (sb) sb.style.display = ''; autoFarmLoop(); };
                 var fsp = document.getElementById('lvscFarmStopBtn'); if (fsp) fsp.onclick = function() { stopFarm(); var sb = document.getElementById('lvscFarmStartBtn'); if (sb) sb.style.display = ''; this.style.display = 'none'; };
             })();
@@ -8914,8 +10470,8 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
             (function() {
                 var c = document.getElementById('lvscMonitorWashStone'); if (!c) return;
                 var g = el('div', 'lvsc-grid2');
-                g.innerHTML = '<label>检测间隔(秒)<input id=\"lvscWashStoneMonitorInterval\" type=\"number\" min=\"10\" step=\"5\" value=\"' + (state.washStoneMonitorInterval || 30) + '\"></label>';
-                c.appendChild(g);
+                var _awsChecked = localStorage.getItem('lvSpiritCleaner.autoStartWashStone') === '1' ? ' checked' : '';
+                g.innerHTML = '<label>检测间隔(秒)<input id=\"lvscWashStoneMonitorInterval\" type=\"number\" min=\"10\" step=\"5\" value=\"' + (state.washStoneMonitorInterval || 30) + '\"></label><label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAutoStartWashStone\" type=\"checkbox\"' + _awsChecked + '>刷新后自启</label>';                c.appendChild(g);
                 var upgRow = el('div'); upgRow.style.cssText = 'display:flex;gap:6px';
                 upgRow.appendChild(actBtn('lvscWashStoneUpgradeStartBtn', '一键升品'));
                 upgRow.appendChild(stopBtn('lvscWashStoneUpgradeStopBtn'));
@@ -8924,6 +10480,17 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 if (usStartBtn) usStartBtn.onclick = autoUpgradeWashStonesLoop;
                 var usStopBtn = document.getElementById('lvscWashStoneUpgradeStopBtn');
                 if (usStopBtn) usStopBtn.onclick = stopWashStoneUpgrade;
+                var aws = document.getElementById('lvscAutoStartWashStone');
+                if (aws) {
+                    aws.checked = state.autoStartWashStone;
+                    aws.onchange = function() {
+                        state.autoStartWashStone = this.checked;
+                        persistSetting('lvSpiritCleaner.autoStartWashStone', this.checked ? '1' : '0');
+                        if (this.checked && !autoWashStoneUpgradeRunning) {
+                            autoUpgradeWashStonesLoop();
+                        }
+                    };
+                }
                 c.appendChild(upgRow);
                 c.appendChild(logDiv('lvscWashStoneUpgradeLog'));
             })();
@@ -8931,7 +10498,8 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
             (function() {
                 var c = document.getElementById('lvscMonitorPillUpgrade'); if (!c) return;
                 var g = el('div', 'lvsc-grid2');
-                g.innerHTML = '<label>检测间隔(秒)<input id=\"lvscPillUpgradeMonitorInterval\" type=\"number\" min=\"10\" step=\"5\" value=\"' + (state.pillUpgradeMonitorInterval || 30) + '\"></label>';
+                var _apuChecked = localStorage.getItem('lvSpiritCleaner.autoStartPillUpgrade') === '1' ? ' checked' : '';
+                g.innerHTML = '<label>检测间隔(秒)<input id=\"lvscPillUpgradeMonitorInterval\" type=\"number\" min=\"10\" step=\"5\" value=\"' + (state.pillUpgradeMonitorInterval || 30) + '\"></label><label class=\"lvsc-check\" style=\"font-size:11px\"><input id=\"lvscAutoStartPillUpgrade\" type=\"checkbox\"' + _apuChecked + '>刷新后自启</label>';
                 c.appendChild(g);
                 var upgRow = el('div'); upgRow.style.cssText = 'display:flex;gap:6px';
                 upgRow.appendChild(actBtn('lvscPillUpgradeStartBtn', '一键升阶'));
@@ -8943,6 +10511,17 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 if (puStartBtn) puStartBtn.onclick = autoUpgradePillsLoop;
                 var puStopBtn = document.getElementById('lvscPillUpgradeStopBtn');
                 if (puStopBtn) puStopBtn.onclick = stopPillUpgrade;
+                var apu = document.getElementById('lvscAutoStartPillUpgrade');
+                if (apu) {
+                    apu.checked = state.autoStartPillUpgrade;
+                    apu.onchange = function() {
+                        state.autoStartPillUpgrade = this.checked;
+                        persistSetting('lvSpiritCleaner.autoStartPillUpgrade', this.checked ? '1' : '0');
+                        if (this.checked && !autoPillUpgradeRunning) {
+                            autoUpgradePillsLoop();
+                        }
+                    };
+                }
             })();
 
             // ---------- 珍宝阁 → craft ----------
@@ -9011,7 +10590,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                     add(state.autoRecoveryMode !== 'none', '自动恢复');
                     add(state.sectQuickRecovery, '宗门恢复');
                     add(state.autoSweepMode || state.autoExploreMode, '自动模式');
-                    if (!items.length) { td.innerHTML = '<span style="color:var(--text-muted)">暂无已开启的自动功能</span>'; return; }
+                    if (!items.length) { td.innerHTML = '<span style="color:#aaa">暂无已开启的自动功能</span>'; return; }
                     td.innerHTML = items.map(function(n) { return '<span style="padding:2px 7px;background:rgba(107,201,160,.1);color:#6bc9a0;border-radius:4px;white-space:nowrap">' + n + '</span>'; }).join('');
                 };
                 window._renderAutoStatus();
@@ -9031,7 +10610,7 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                     if (state.autoMaintainLuck) items.push('维持气运');
                     if (typeof autoTrialRunning !== 'undefined' && autoTrialRunning) items.push('试练塔');
                     if (typeof autoMysteryBoxRunning !== 'undefined' && autoMysteryBoxRunning) items.push('秘匣');
-                    if (!items.length) { md.innerHTML = '<span style="color:var(--text-muted)">暂无正在运行的监控</span>'; return; }
+                    if (!items.length) { md.innerHTML = '<span style="color:#aaa">暂无正在运行的监控</span>'; return; }
                     md.innerHTML = items.map(function(n) { return '<span style="padding:2px 7px;background:rgba(224,160,64,.12);color:#e0a040;border-radius:4px;white-space:nowrap">● ' + n + '</span>'; }).join('');
                 };
                 window._renderRunningMonitors();
@@ -9133,6 +10712,11 @@ function rfrBtn(id) { var b = el('button'); b.id = id; b.className = 'lvsc-rfr-b
                 var impBtn = document.getElementById('lvscImportConfigBtn');
                 if (expBtn) expBtn.onclick = exportConfig;
                 if (impBtn) impBtn.onclick = importConfig;
+                var saA = document.getElementById('lvscSaveSlotA'); if (saA) saA.onclick = function() { saveConfigToSlot('A'); };
+                var ldA = document.getElementById('lvscLoadSlotA'); if (ldA) ldA.onclick = function() { loadConfigFromSlot('A'); };
+                var saB = document.getElementById('lvscSaveSlotB'); if (saB) saB.onclick = function() { saveConfigToSlot('B'); };
+                var ldB = document.getElementById('lvscLoadSlotB'); if (ldB) ldB.onclick = function() { loadConfigFromSlot('B'); };
+                var defBtn = document.getElementById('lvscDefaultConfigBtn'); if (defBtn) defBtn.onclick = function() { if (confirm('将使用默认配置覆盖当前设置，确定？')) loadDefaultConfig(); };
 
             setTimeout(refreshPavilionItems, 2000);
 
@@ -9192,6 +10776,10 @@ var nirvAutoTimer = document.getElementById('lvscNirvanaAutoTimer');
 if (nirvAutoTimer) { nirvAutoTimer.checked = state.nirvanaAutoTimer; nirvAutoTimer.onchange = function() { state.nirvanaAutoTimer = this.checked; persistSetting('lvSpiritCleaner.nirvanaAutoTimer', this.checked); if (this.checked) { updateNextAutoNirvanaTime(); startAutoNirvanaTimer(); } }; }
 var nirvTimerMin = document.getElementById('lvscNirvanaTimerMin');
 if (nirvTimerMin) { nirvTimerMin.value = state.nirvanaTimerMin || 10; nirvTimerMin.onchange = function() { state.nirvanaTimerMin = Math.max(1, Number(this.value)||10); persistSetting('lvSpiritCleaner.nirvanaTimerMin', String(state.nirvanaTimerMin)); if (state.nirvanaAutoTimer) updateNextAutoNirvanaTime(); }; }
+var nirvDelayMin = document.getElementById('lvscNirvanaDelayMin');
+if (nirvDelayMin) { nirvDelayMin.value = String(state.nirvanaDelayMin || 5); nirvDelayMin.onchange = function() { state.nirvanaDelayMin = Math.max(0.5, Number(this.value) || 5); persistSetting('lvSpiritCleaner.nirvanaDelayMin', String(state.nirvanaDelayMin)); }; }
+var nirvDelayMax = document.getElementById('lvscNirvanaDelayMax');
+if (nirvDelayMax) { nirvDelayMax.value = String(state.nirvanaDelayMax || 10); nirvDelayMax.onchange = function() { state.nirvanaDelayMax = Math.max(Number(state.nirvanaDelayMin || 5), Number(this.value) || 10); persistSetting('lvSpiritCleaner.nirvanaDelayMax', String(state.nirvanaDelayMax)); }; }
 // 定时炼制倒计时
 setInterval(function() {
     var cdEl = document.getElementById('lvscNirvanaCountdown');
@@ -9234,7 +10822,7 @@ setInterval(function() {
         };
     }
     // 折叠功能初始化（同步执行，不会被重刷覆盖）
-try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.style.cursor='pointer';r.onclick=function(ev){if(ev.target.closest('label,input,button,select'))return;var cp=this.classList.toggle('lvsc-title-collapsed');try{localStorage.setItem('lvscCS_'+this.textContent.trim(),cp?'1':'0')}catch(_){};if(!this.classList.contains('lvsc-big-cat-title-row')){var el=this.nextElementSibling;while(el&&!el.classList.contains('lvsc-section-title-row')){if(cp)el.classList.add('lvsc-section-content-hidden');else el.classList.remove('lvsc-section-content-hidden');el=el.nextElementSibling}}};var v=localStorage.getItem('lvscCS_'+r.textContent.trim());if(v!=='0'){r.classList.add('lvsc-title-collapsed');if(!r.classList.contains('lvsc-big-cat-title-row')){var el=r.nextElementSibling;while(el&&!el.classList.contains('lvsc-section-title-row')){el.classList.add('lvsc-section-content-hidden');el=el.nextElementSibling}}}})}catch(e){}
+try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.style.cursor='pointer';r.onclick=function(ev){if(ev.target.closest('label,input,button,select'))return;var cp=this.classList.toggle('lvsc-title-collapsed');try{localStorage.setItem('lvscCS_'+this.textContent.trim(),cp?'1':'0')}catch(_){};var el=this.nextElementSibling;while(el&&!el.classList.contains('lvsc-section-title-row')){if(cp)el.classList.add('lvsc-section-content-hidden');else el.classList.remove('lvsc-section-content-hidden');el=el.nextElementSibling}};var v=localStorage.getItem('lvscCS_'+r.textContent.trim());if(v!=='0'){r.classList.add('lvsc-title-collapsed');var el2=r.nextElementSibling;while(el2&&!el2.classList.contains('lvsc-section-title-row')){el2.classList.add('lvsc-section-content-hidden');el2=el2.nextElementSibling}}else{var el3=r.nextElementSibling;while(el3&&!el3.classList.contains('lvsc-section-title-row')){el3.classList.remove('lvsc-section-content-hidden');el3=el3.nextElementSibling}}})}catch(e){}
     // 全部展开/折叠按钮
     var _expandAll = document.getElementById('lvscExpandAll');
     var _collapseAll = document.getElementById('lvscCollapseAll');
@@ -9242,13 +10830,9 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
         document.querySelectorAll('.lvsc-section-title-row').forEach(function(r) {
             r.classList.remove('lvsc-title-collapsed');
             try { localStorage.setItem('lvscCS_' + r.textContent.trim(), '0'); } catch(_) {}
-            if (!r.classList.contains('lvsc-big-cat-title-row')) {
-                var el = r.nextElementSibling;
-                while (el && !el.classList.contains('lvsc-section-title-row')) {
-                    el.classList.remove('lvsc-section-content-hidden');
-                    el = el.nextElementSibling;
-                }
-            }
+        });
+        document.querySelectorAll('.lvsc-section-content-hidden').forEach(function(el) {
+            el.classList.remove('lvsc-section-content-hidden');
         });
     };
     if (_collapseAll) _collapseAll.onclick = function() {
@@ -9359,6 +10943,104 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
     function waitForGame() {
         if (document.body && (window.api || window._lastPlayerData || document.getElementById('exploreBtn') || location.pathname === '/' || location.pathname === '' || location.pathname === '/game.html')) {
                         try { buildPanel(); } catch (err) { console.warn('[LingVerse] 面板加载失败，2秒后重试:', err); setTimeout(waitForGame, 2000); return; }
+                                    // 注入游戏"更多"菜单按钮 + 顶栏固定按钮
+            try { (function injectMenuBtn() {
+                // 通用的打开面板函数
+                function openLvscPanel() {
+                    try { if (typeof closeHeaderMore === 'function') closeHeaderMore(); } catch (_) {}
+                    var p = document.getElementById('lvscPanel');
+                    if (!p) return;
+                    var mode = localStorage.getItem('lvSpiritCleaner.themeMode') || 'float';
+                    if (mode === 'embed') {
+                        if (p.classList.contains('lvsc-mobile-hidden') || p.style.display === 'none') {
+                            p.classList.remove('lvsc-mobile-hidden');
+                            p.style.display = 'flex';
+                            setPanelCollapsed(p, false);
+                            var isMob = window.innerWidth <= 768;
+                            if (isMob) {
+                                document.body.appendChild(p);
+                            } else {
+                                var gb = document.querySelector('.game-body');
+                                if (gb && p.parentElement !== gb) { gb.appendChild(p); }
+                            }
+                            p.classList.add('lvsc-embedded');
+                            var savedW = localStorage.getItem('lvSpiritCleaner.embeddedWidth');
+                            if (savedW) { var w = parseInt(savedW, 10) || 420; p.style.flex = '0 0 ' + w + 'px'; p.style.width = w + 'px'; }
+                        } else {
+                            p.classList.add('lvsc-mobile-hidden');
+                            try { if (typeof stop === 'function') stop('已隐藏'); } catch (_) {}
+                        }
+                    } else {
+                        p.style.display = 'flex';
+                        p.classList.remove('lvsc-embedded','lvsc-hide');
+                        if (p.parentElement !== document.body) document.body.appendChild(p);
+                        requestAnimationFrame(function(){requestAnimationFrame(function(){p.classList.add('lvsc-show');});});
+                    }
+                }
+
+                // 注入到"更多"下拉菜单
+                var menu = document.getElementById('headerMoreMenu');
+                if (menu && !menu.querySelector('.lvsc-menu-btn')) {
+                    var btns = menu.querySelectorAll('button.header-more-item');
+                    var target = null;
+                    for (var i = 0; i < btns.length; i++) {
+                        if ((btns[i].title || btns[i].textContent || '').indexOf('设置') !== -1) { target = btns[i]; break; }
+                    }
+                    if (target) {
+                        var btn = document.createElement('button');
+                        btn.className = 'btn-icon header-more-item lvsc-menu-btn';
+                        btn.title = '脚本助手';
+                        btn.textContent = '脚本';
+                        btn.setAttribute('role', 'menuitem');
+                        (function(){var ref=document.querySelector('.header-more-item--support');if(ref)btn.style.setProperty('--lvsc-bar',getComputedStyle(ref,'::before').backgroundColor);})();
+                        btn.onclick = openLvscPanel;
+                        target.parentNode.insertBefore(btn, target.nextSibling);
+                        setTimeout(function () { if (!menu.querySelector('.lvsc-menu-btn')) target.parentNode.insertBefore(btn, target.nextSibling); }, 3000);
+                    }
+                }
+
+                // 点击游戏左上角"灵界"文字打开脚本面板
+                try {
+                    if (!window.__lvscLingjieBound) {
+                        window.__lvscLingjieBound = true;
+                        var checkLingjie = function() {
+                            var el = document.querySelector('h1') || document.querySelector('.game-title') || document.querySelector('[class*="logo"]') || document.querySelector('a[href*="ling"]');
+                            if (!el) {
+                                // 按文本内容找
+                                var all = document.querySelectorAll('a, h1, h2, h3, span, div');
+                                for (var i = 0; i < all.length; i++) {
+                                    if ((all[i].textContent || '').trim() === '灵界' && all[i].offsetParent !== null) {
+                                        el = all[i];
+                                        break;
+                                    }
+                                }
+                            }
+                            if (el && !el.getAttribute('data-lvsc-bound')) {
+                                el.setAttribute('data-lvsc-bound', '1');
+                                el.style.cursor = 'pointer';
+                                el.title = (el.title ? el.title + ' | ' : '') + '点击打开脚本';
+                                el.addEventListener('click', function(e) {
+                                    // 不干扰原始点击行为（如果是链接）
+                                    if (e.target.tagName === 'A' && e.target.href) return;
+                                    openLvscPanel();
+                                });
+                            }
+                        };
+                        checkLingjie();
+                        // 游戏可能动态加载，多试几次
+                        var lingjieTimer = setInterval(function() {
+                            var bound = document.querySelector('[data-lvsc-bound="1"]');
+                            if (bound) { clearInterval(lingjieTimer); return; }
+                            checkLingjie();
+                        }, 2000);
+                        setTimeout(function() { clearInterval(lingjieTimer); }, 30000);
+                    }
+                } catch(_) {}
+            })(); } catch (_) {}
+
+            function lvscUpdateMenuBar(){var ref=document.querySelector('.header-more-item--support');var btn=document.querySelector('.lvsc-menu-btn');if(ref&&btn){var c=getComputedStyle(ref,'::before').backgroundColor;btn.style.setProperty('--lvsc-bar',c);}}
+            setInterval(lvscUpdateMenuBar, 800);
+            lvscUpdateMenuBar();
             // ★ 强制兜底恢复：无论 buildPanel 内部是否中断，这里直接通过 localStorage 强制设置
             try {
                 var _deCb = document.getElementById('lvscAutoDisposeEnabled');
@@ -9367,7 +11049,59 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
                 if (_synCb) _synCb.checked = localStorage.getItem('lvSpiritCleaner.autoSynthesize') === '1';
                 var _deIntv = document.getElementById('lvscAutoDisposeInterval');
                 if (_deIntv) _deIntv.value = state.autoDisposeInterval || 300;
+                var _asDisp = document.getElementById('lvscAutoStartDispose');
+                if (_asDisp) _asDisp.checked = localStorage.getItem('lvSpiritCleaner.autoStartDispose') === '1';
+                var _aws = document.getElementById('lvscAutoStartWashStone');
+                if (_aws) _aws.checked = localStorage.getItem('lvSpiritCleaner.autoStartWashStone') === '1';
+                var _apu = document.getElementById('lvscAutoStartPillUpgrade');
+                if (_apu) _apu.checked = localStorage.getItem('lvSpiritCleaner.autoStartPillUpgrade') === '1';
+                var _af2 = document.getElementById('lvscAutoStartFarm');
+                if (_af2) _af2.checked = localStorage.getItem('lvSpiritCleaner.autoStartFarm') === '1';
             } catch(_) {}
+            (function(){
+            var cb=document.getElementById('lvscQuickClearShowCompact');
+            var sA=document.getElementById('lvscActionsQuickStatus');
+            var bA=document.getElementById('lvscActionsQuickBtn');
+            var sC=document.getElementById('lvscCompactQuickStatus');
+            var bC=document.getElementById('lvscCompactQuickBtn');
+            if(!cb)return;
+            cb.checked=localStorage.getItem('lvSpiritCleaner.quickClearShowCompact')==='1';
+            var update=function(){var v=cb.checked;try{localStorage.setItem('lvSpiritCleaner.quickClearShowCompact',v?'1':'0')}catch(_){};if(sA)sA.style.display=v?'inline':'none';if(bA)bA.style.display=v?'inline-block':'none';if(sC)sC.style.display=v?'inline':'none';if(bC)bC.style.display=v?'inline-block':'none'};
+            var syncBtnState = function(){
+                if(quickClearRunning){
+                    if(sA)sA.textContent='运行中';if(bA){bA.textContent='停止';bA.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    if(sC)sC.textContent='运行中';if(bC){bC.textContent='停止';bC.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                }
+            };
+            cb.onchange=update;
+            update();
+            syncBtnState();
+            setTimeout(syncBtnState, 1200);
+            // CompactBar 按钮单独绑定（和 Actions 栏同步）
+            if(bC){
+                bC.onclick = function(){
+                    var mainBtn=document.getElementById('lvscQuickClearBtn');
+                    var actBtn=document.getElementById('lvscActionsQuickBtn');
+                    var cmpBtn=document.getElementById('lvscCompactQuickBtn');
+                    var actSt=document.getElementById('lvscActionsQuickStatus');
+                    var cmpSt=document.getElementById('lvscCompactQuickStatus');
+                    if(quickClearRunning){
+                        quickClearRunning=false;try{localStorage.removeItem('lvSpiritCleaner.quickClearRunning')}catch(_){}
+                        updateMeter();
+                        if(mainBtn){mainBtn.textContent='启动';mainBtn.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}
+                        if(actBtn){actBtn.textContent='快速清理';actBtn.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}
+                        if(cmpBtn){cmpBtn.textContent='快清';cmpBtn.style.background='linear-gradient(135deg,#6bc9a0,#4a8)'}
+                        setStatus('快速清理已停止','idle');
+                        return;
+                    }
+                    if(running){setStatus('清理运行中','warn');return}
+                    if(mainBtn){mainBtn.textContent='停止';mainBtn.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    if(actBtn){actBtn.textContent='停止';actBtn.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    if(cmpBtn){cmpBtn.textContent='停止';cmpBtn.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+                    quickClearLoop();
+                };
+            }
+        })();
             // ★ 强制兜底恢复："其他"分类全部事件绑定（防止 buildPanel 内部异常导致丢失）
             try {
                 // 自动收徒
@@ -9408,18 +11142,34 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
                 var _le = document.getElementById('lvscAutoLoginEmail');
                 var _lp = document.getElementById('lvscAutoLoginPassword');
                 var _len = document.getElementById('lvscAutoLoginEnabled');
-                if (_le) { _le.value = localStorage.getItem('lvSpiritCleaner.autoLoginEmail') || ''; _le.onchange = function() { localStorage.setItem('lvSpiritCleaner.autoLoginEmail', this.value || ''); }; }
-                if (_lp) { _lp.value = localStorage.getItem('lvSpiritCleaner.autoLoginPassword') || ''; _lp.onchange = function() { localStorage.setItem('lvSpiritCleaner.autoLoginPassword', this.value || ''); }; }
-                if (_len) { _len.checked = localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1'; _len.onchange = function() { localStorage.setItem('lvSpiritCleaner.autoLoginEnabled', this.checked ? '1' : '0'); }; }
+                if (_le) { _le.value = localStorage.getItem('lvSpiritCleaner.autoLoginEmail') || ''; }
+                if (_lp) { _lp.value = localStorage.getItem('lvSpiritCleaner.autoLoginPassword') || ''; }
+                if (_len) { _len.checked = localStorage.getItem('lvSpiritCleaner.autoLoginEnabled') === '1'; }
                 // 配置导入导出按钮 —— 匿名自包含
                 var _expB = document.getElementById('lvscExportConfigBtn');
                 var _impB = document.getElementById('lvscImportConfigBtn');
                 if (_expB) _expB.onclick = function() {
-                    try{var c={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&k.indexOf('autoLoginEmail')===-1&&k.indexOf('autoLoginPassword')===-1)c[k]=localStorage.getItem(k)}var b=new Blob([JSON.stringify(c,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lingverse-config-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);}catch(e){alert('导出失败:'+e.message)}
-                };
+                    if(!confirm('导出当前配置？（仅导出配置项，不含面板位置/运行状态等动态数据）'))return;try{var c={};var total=0;for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&!_isRuntimeKey(k)){c[k]=localStorage.getItem(k);total++;}}var b=new Blob([JSON.stringify(c,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lingverse-config-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);setStatus('已导出 '+total+' 项配置','run');}catch(e){alert('导出失败:'+e.message)}                };
                 if (_impB) _impB.onclick = function() {
-                    try{var inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result);var cnt=0;for(var k in d){if(k.indexOf('autoLoginEmail')!==-1||k.indexOf('autoLoginPassword')!==-1)continue;try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}alert('导入了 '+cnt+' 项配置');location.reload();}catch(e){alert('导入失败:'+e.message)}};r.readAsText(f)};inp.click();}catch(e){alert('导入失败:'+e.message)}
+                    try{var inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result);var cnt=0;for(var k in d){if(!_isRuntimeKey(k)){try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}}alert('导入了 '+cnt+' 项配置（已过滤动态数据）');location.reload();}catch(e){alert('导入失败:'+e.message)}};r.readAsText(f)};inp.click();}catch(e){alert('导入失败:'+e.message)}
                 };
+                var _saA = document.getElementById('lvscSaveSlotA');
+                var _ldA = document.getElementById('lvscLoadSlotA');
+                var _saB = document.getElementById('lvscSaveSlotB');
+                var _ldB = document.getElementById('lvscLoadSlotB');
+                if (_saA) _saA.onclick = function() { try{var c={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&k.indexOf('autoLoginEmail')===-1&&k.indexOf('autoLoginPassword')===-1&&k.indexOf('configSlot')===-1)c[k]=localStorage.getItem(k)}localStorage.setItem('lvSpiritCleaner.configSlotA',JSON.stringify(c));setStatus('配置已保存到槽位A','run')}catch(e){alert('保存失败:'+e.message)} };
+                if (_ldA) _ldA.onclick = function() { try{var raw=localStorage.getItem('lvSpiritCleaner.configSlotA');if(!raw){alert('槽位A暂无保存的配置');return}var d=JSON.parse(raw);var cnt=0;for(var k in d){if(k.indexOf('configSlot')!==-1)continue;try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}alert('从槽位A读取了 '+cnt+' 项配置');location.reload()}catch(e){alert('读取失败:'+e.message)} };
+                if (_saB) _saB.onclick = function() { try{var c={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&k.indexOf('autoLoginEmail')===-1&&k.indexOf('autoLoginPassword')===-1&&k.indexOf('configSlot')===-1)c[k]=localStorage.getItem(k)}localStorage.setItem('lvSpiritCleaner.configSlotB',JSON.stringify(c));setStatus('配置已保存到槽位B','run')}catch(e){alert('保存失败:'+e.message)} };
+                if (_ldB) _ldB.onclick = function() { try{var raw=localStorage.getItem('lvSpiritCleaner.configSlotB');if(!raw){alert('槽位B暂无保存的配置');return}var d=JSON.parse(raw);var cnt=0;for(var k in d){if(k.indexOf('configSlot')!==-1)continue;try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}alert('从槽位B读取了 '+cnt+' 项配置');location.reload()}catch(e){alert('读取失败:'+e.message)} };
+                var _defBtn = document.getElementById('lvscDefaultConfigBtn'); if (_defBtn) _defBtn.onclick = function() { if (confirm('将使用默认配置覆盖当前设置，确定？')) loadDefaultConfig(); };
+                // 安全分类折叠兜底修复（强制覆盖）
+                document.querySelectorAll('.lvsc-section-title-row.lvsc-big-cat-title-row').forEach(function(r) {
+                    r.style.cursor = 'pointer';
+                    r.onclick = function(ev) {
+                        if (ev.target.closest('label,input,button,select')) return;
+                        this.classList.toggle('lvsc-title-collapsed');
+                    };
+                });
             } catch(_) {}
             // 灵田种子兜底刷新（确保刷新按钮和种子下拉始终可用）
             setTimeout(function() {
@@ -9435,6 +11185,8 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
                 if (fSeed) fSeed.onchange = function() { state.farmSeedId = this.value; state.farmSeedName = this.options[this.selectedIndex].textContent || ''; persistSetting('lvSpiritCleaner.farmSeedId', state.farmSeedId); persistSetting('lvSpiritCleaner.farmSeedName', state.farmSeedName); };
                 var fIntv = document.getElementById('lvscFarmInterval');
                 if (fIntv) { fIntv.value = state.farmInterval; fIntv.onchange = function() { state.farmInterval = Math.max(5, Number(this.value)||30); persistSetting('lvSpiritCleaner.farmInterval', String(state.farmInterval)); }; }
+                var _af = document.getElementById('lvscAutoStartFarm');
+                if (_af) _af.checked = state.autoStartFarm;
                 var fHarv = document.getElementById('lvscFarmAutoHarvest');
                 if (fHarv) { fHarv.checked = state.farmAutoHarvest; fHarv.onchange = function() { state.farmAutoHarvest = this.checked; persistSetting('lvSpiritCleaner.farmAutoHarvest', this.checked); }; }
                 var fPlant = document.getElementById('lvscFarmAutoPlant');
@@ -9484,7 +11236,7 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
             var wasMonitoring = localStorage.getItem('lvSpiritCleaner.monitoringSpirit') === '1';
             startAutoPetHealTimer();
             if (wasMonitoring) { setTimeout(function() { monitorSpiritLoop(); }, 1000); }
-            if (wasRunning && !running) {
+            if (wasRunning && !running && localStorage.getItem('lvSpiritCleaner.quickClearRunning') !== '1') {
                 setTimeout(function() {
                     var p = getPlayer() || {};
                     if (p.isMeditating) {
@@ -9496,22 +11248,49 @@ try{document.querySelectorAll('.lvsc-section-title-row').forEach(function(r){r.s
                     else { runLoop(); }
                 }, 2000);
             }
-            // === 刷新后自启（记忆模式：刷新前运行 → 刷新后自动恢复）===
-            if (localStorage.getItem('lvSpiritCleaner.farmRunning') === '1') {
+            // === 刷新后自启（勾选即自启，不管之前状态）===
+            // 直接从 localStorage 读自启设置，避免 state 被备份恢复覆盖的问题
+            if (localStorage.getItem('lvSpiritCleaner.autoStartFarm') === '1') {
                 setTimeout(function() {
                     autoFarmLoop();
                     var fb = document.getElementById('lvscFarmStartBtn'); if (fb) fb.style.display = 'none';
                     var fs = document.getElementById('lvscFarmStopBtn'); if (fs) fs.style.display = '';
                 }, 3000);
             }
-            if (localStorage.getItem('lvSpiritCleaner.disposeRunning') === '1') {
+            if (localStorage.getItem('lvSpiritCleaner.autoStartDispose') === '1') {
                 setTimeout(function() { var db = document.getElementById('lvscDisposeStartBtn'); if (db) db.click(); }, 5000);
             }
-if (localStorage.getItem('lvSpiritCleaner.washStoneUpgradeRunning') === '1') {
+if (localStorage.getItem('lvSpiritCleaner.autoStartWashStone') === '1') {
     setTimeout(function() { autoUpgradeWashStonesLoop(); }, 4000);
 }
-if (localStorage.getItem('lvSpiritCleaner.pillUpgradeRunning') === '1') {
+if (localStorage.getItem('lvSpiritCleaner.autoStartPillUpgrade') === '1') {
     setTimeout(function() { autoUpgradePillsLoop(); }, 5000);
+}
+if (localStorage.getItem('lvSpiritCleaner.quickClearRunning') === '1') {
+    setTimeout(function() {
+        try {
+            var btn = document.getElementById('lvscQuickClearBtn');
+            if (running) {
+                try { localStorage.removeItem('lvSpiritCleaner.quickClearRunning'); } catch(_) {}
+                if (btn) { btn.textContent = '启动'; btn.style.background = 'linear-gradient(135deg,#6bc9a0,#4a8)'; }
+                setStatus('快速清理自启跳过（清理已在运行）', 'idle');
+                return;
+            }
+            if (btn) { btn.textContent = '停止'; btn.style.background = 'linear-gradient(135deg,#e06060,#c04040)'; }
+            var _bA=document.getElementById('lvscActionsQuickBtn');if(_bA){_bA.textContent='停止';_bA.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+            var _bC=document.getElementById('lvscCompactQuickBtn');if(_bC){_bC.textContent='停止';_bC.style.background='linear-gradient(135deg,#e06060,#c04040)'}
+            setStatus('⚡ 快速清理自启恢复中...', 'run');
+            quickClearLoop().catch(function(e) {
+                console.warn('[LingVerse] quick clear auto-restart failed:', e);
+                try { localStorage.removeItem('lvSpiritCleaner.quickClearRunning'); } catch(_) {}
+                quickClearRunning = false;
+                var b = document.getElementById('lvscQuickClearBtn');
+                if (b) { b.textContent = '启动'; b.style.background = 'linear-gradient(135deg,#6bc9a0,#4a8)'; }
+            });
+        } catch(e) {
+            console.warn('[LingVerse] quick clear auto-restart error:', e);
+        }
+    }, 6000);
 }
 if (localStorage.getItem('lvSpiritCleaner.nirvanaAutoTimer') === '1' && state.nirvanaAutoTimer) {
     setTimeout(function() { updateNextAutoNirvanaTime(); startAutoNirvanaTimer(); }, 2000);
@@ -9519,7 +11298,10 @@ if (localStorage.getItem('lvSpiritCleaner.nirvanaAutoTimer') === '1' && state.ni
 if (localStorage.getItem('lvSpiritCleaner.craftAutoTimer') === '1' && state.craftAutoTimer) {
     setTimeout(function() { startAutoCraftTimer(); }, 2000);
 }
-// === 自动刷新（登录页且启用自动登录时禁用）===
+// 自动秘匣：勾选后每天自动开启
+if (state.autoMysteryBox && !mysteryBoxOpenedToday()) {
+    setTimeout(function() { toggleAutoMysteryBox(); }, 4000);
+}
 var _reloadMin = Number(localStorage.getItem('lvSpiritCleaner.autoReloadMin')) || 0;
 // 登录页 → 允许自动刷新
 if (_reloadMin > 0) {
@@ -9588,13 +11370,13 @@ setInterval(function() {
         if (eb && !eb._bound) {
             eb._bound = true;
             eb.onclick = function() {
-                try{var c={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&k.indexOf('autoLoginEmail')===-1&&k.indexOf('autoLoginPassword')===-1)c[k]=localStorage.getItem(k)}var b=new Blob([JSON.stringify(c,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lingverse-config-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);}catch(e){alert('导出失败:'+e.message)}
+                if(!confirm('导出当前配置？（仅导出配置项，不含面板位置/运行状态等动态数据）'))return;try{var c={};var total=0;for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('lvSpiritCleaner.')===0&&!_isRuntimeKey(k)){c[k]=localStorage.getItem(k);total++;}}var b=new Blob([JSON.stringify(c,null,2)],{type:'application/json'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='lingverse-config-'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(a.href);setStatus('已导出 '+total+' 项配置','run');}catch(e){alert('导出失败:'+e.message)}
             };
         }
         if (ib && !ib._bound) {
             ib._bound = true;
             ib.onclick = function() {
-                try{var inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result);var cnt=0;for(var k in d){if(k.indexOf('autoLoginEmail')!==-1||k.indexOf('autoLoginPassword')!==-1)continue;try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}alert('导入了 '+cnt+' 项配置');location.reload();}catch(e){alert('导入失败:'+e.message)}};r.readAsText(f)};inp.click();}catch(e){alert('导入失败:'+e.message)}
+                try{var inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=function(){var f=this.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{var d=JSON.parse(r.result);var cnt=0;for(var k in d){if(!_isRuntimeKey(k)){try{localStorage.setItem(k,d[k]);cnt++}catch(e){}}}alert('导入了 '+cnt+' 项配置（已过滤动态数据）');location.reload();}catch(e){alert('导入失败:'+e.message)}};r.readAsText(f)};inp.click();}catch(e){alert('导入失败:'+e.message)}
             };
         }
     }, 3000);
